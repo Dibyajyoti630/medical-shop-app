@@ -7,24 +7,26 @@
 
   async function render() {
     msg.innerHTML = "";
-    let items;
-    try { items = await Cart.detailed(); }
-    catch (e) { return DB.showErr(msg, e.message); }
+    // Fire cart fetch + auth check concurrently — independent calls.
+    let items, chk;
+    try {
+      [items, chk] = await Promise.all([
+        Cart.detailed(),
+        Auth.requireRole("customer").catch(() => ({ ok: false, reason: "signin" })),
+      ]);
+    } catch (e) { return DB.showErr(msg, e.message); }
     if (!items.length) {
       wrap.innerHTML = '<div class="card"><p>Your cart is empty.</p>' +
         '<p style="margin-top:10px"><a href="index.html">Browse medicines →</a></p></div>';
       return;
     }
-    const sub = items.reduce((a, m) => a + m.price * m.qty, 0);
-    const fee = sub >= FREE_ABOVE ? 0 : FEE;
-    const tot = sub + fee;
-
-    const chk = await Auth.requireRole("customer").catch(() => ({ ok: false, reason: "signin" }));
     if (!chk.ok) {
-      // ponytail: simplest fallback for unauth cart
       wrap.innerHTML = '<div id="gate"></div>';
       return Auth.gate(document.getElementById("gate"), render);
     }
+    const sub = items.reduce((a, m) => a + m.price * m.qty, 0);
+    const fee = sub >= FREE_ABOVE ? 0 : FEE;
+    const tot = sub + fee;
     const me = chk.profile;
 
     let addrs = [];
@@ -68,8 +70,8 @@
         '<div class="row" style="justify-content:space-between;font-size:17px"><b>Total</b><b class="price">' + DB.money(tot) + '</b></div>' +
       '</div>' +
       '<h2 style="font-size:16px;margin:16px 4px 8px">Payment Method</h2>' +
-      '<div class="card row" id="pay-upi" style="cursor:pointer"><div class="circle-icon" style="background:transparent;font-size:24px">📱</div><div style="flex:1"><b>UPI</b><div class="muted">PhonePe • GPay • Paytm</div></div><input type="radio" name="pay" disabled></div>' +
-      '<div class="card row active-pay" id="pay-cod" style="cursor:pointer;border:2px solid var(--brand)"><div class="circle-icon" style="background:transparent;font-size:24px">💵</div><div style="flex:1"><b>Cash on Delivery</b><div class="muted">Pay when delivery arrives</div></div><input type="radio" name="pay" checked></div>' +
+      '<div class="pay-card" id="pay-upi"><div class="circle-icon" style="background:transparent;font-size:24px">📱</div><div style="flex:1 1 auto;min-width:0"><b>UPI</b><div class="muted">PhonePe • GPay • Paytm</div></div><span class="pay-radio"></span></div>' +
+      '<div class="pay-card pay-card--active" id="pay-cod"><div class="circle-icon" style="background:transparent;font-size:24px">💵</div><div style="flex:1 1 auto;min-width:0"><b>Cash on Delivery</b><div class="muted">Pay when delivery arrives</div></div><span class="pay-radio pay-radio--on"></span></div>' +
       '<button class="btn" id="place" style="margin-top:14px;height:52px;font-size:17px">🔒 Place Order</button>' +
       '<p class="muted" style="text-align:center;margin-top:12px;font-size:12px">You can review and cancel before the rider is assigned.</p>';
 

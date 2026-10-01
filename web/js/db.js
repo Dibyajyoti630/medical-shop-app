@@ -3,7 +3,9 @@
   "use strict";
   if (!window.supabase) throw new Error("supabase-js CDN not loaded");
   const { SUPABASE_URL, SUPABASE_ANON_KEY } = window.APP_CONFIG;
-  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { autoRefreshToken: true, persistSession: true, detectSessionInUrl: false },
+  });
 
   const PAGE = 20;
 

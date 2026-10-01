@@ -8,17 +8,15 @@
     const chk = await Auth.requireRole("customer").catch(() => ({ ok: false, reason: "signin" }));
     if (!chk.ok) return Auth.gate(wrap, render);
     const me = chk.profile;
-    let addrs = [];
-    let rxs = [];
+    let addrs = [], rxs = [];
     try {
-      const { data, error } = await DB.sb.from("addresses").select("*")
-        .eq("customer_id", me.id).order("created_at");
-      if (error) throw error;
-      addrs = data;
-      const rx = await DB.sb.from("prescriptions").select("*")
-        .eq("customer_id", me.id).order("created_at", { ascending: false });
-      if (rx.error) throw rx.error;
-      rxs = rx.data;
+      const [ar, rr] = await Promise.all([
+        DB.sb.from("addresses").select("*").eq("customer_id", me.id).order("created_at"),
+        DB.sb.from("prescriptions").select("*").eq("customer_id", me.id).order("created_at", { ascending: false }),
+      ]);
+      if (ar.error) throw ar.error;
+      if (rr.error) throw rr.error;
+      addrs = ar.data; rxs = rr.data;
     } catch (e) { return DB.showErr(msg, e.message); }
 
     wrap.innerHTML =
