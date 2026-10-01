@@ -1,0 +1,61 @@
+// Shared auth helpers for admin.html / rider.html (customer auth lands in Phase B).
+(function () {
+  "use strict";
+  async function user() {
+    const { data } = await DB.sb.auth.getUser();
+    return data.user || null;
+  }
+  async function profile() {
+    const u = await user();
+    if (!u) return null;
+    const { data, error } = await DB.sb.from("profiles").select("*").eq("id", u.id).single();
+    if (error && error.code === "PGRST116") { // first login: create customer row
+      const r = await DB.sb.from("profiles").insert({ id: u.id, role: "customer" }).select().single();
+      if (r.error) throw r.error;
+      return r.data;
+    }
+    if (error) throw error;
+    return data;
+  }
+  // Admins pass every role check.
+  async function requireRole(role) {
+    const p = await profile();
+    if (!p) return { ok: false, reason: "signin" };
+    if (p.role !== role && p.role !== "admin") return { ok: false, reason: "forbidden" };
+    return { ok: true, profile: p };
+  }
+  async function signIn(email, password) {
+    const { error } = await DB.sb.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+  }
+  async function signUp(email, password) {
+    const { error } = await DB.sb.auth.signUp({ email, password });
+    if (error) throw error;
+  }
+  async function signOut() { await DB.sb.auth.signOut(); }
+  // Renders a minimal email/password gate into `el`, then calls `next()`.
+  function gate(el, next) {
+    el.innerHTML =
+      '<div class="card"><h2 style="margin-bottom:8px">Sign in</h2>' +
+      '<div id="amsg"></div>' +
+      '<label for="aemail">Email</label><input id="aemail" type="email" autocomplete="email">' +
+      '<label for="apass">Password</label><input id="apass" type="password" autocomplete="current-password">' +
+      '<div class="row" style="margin-top:14px">' +
+      '<button class="btn" id="ago">Sign in</button>' +
+      '<button class="btn secondary" id="areg">Create account</button></div>' +
+      '<p class="muted" style="margin-top:10px">First admin: create an account, then run ' +
+      "<code>update profiles set role='admin' where id='&lt;your-uuid&gt;';</code> in Supabase SQL.</p></div>";
+    const go = async (fn) => {
+      const box = document.getElementById("amsg");
+      try {
+        await fn(document.getElementById("aemail").value, document.getElementById("apass").value);
+        next();
+      } catch (e) { DB.showErr(box, e.message); }
+    };
+    document.getElementById("ago").onclick = () =>
+      go(async (em, pw) => signIn(em.trim(), pw));
+    document.getElementById("areg").onclick = () =>
+      go(async (em, pw) => { await signUp(em.trim(), pw); await signIn(em.trim(), pw); });
+  }
+  window.Auth = { user, profile, requireRole, signIn, signUp, signOut, gate };
+})();
