@@ -107,6 +107,13 @@ main{padding:6px 14px 96px}
 .row{display:flex;gap:10px;align-items:center}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .muted{color:var(--muted);font-size:13px}
+/* Profile view-mode: avatar + ghost icon buttons */
+.avatar{width:54px;height:54px;border-radius:50%;background:var(--brand);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:19px;flex:0 0 auto}
+.iconbtn{border:0;background:none;color:#8a9691;padding:8px;border-radius:10px;cursor:pointer;line-height:0}
+.iconbtn:active{background:#eef3f1}
+.profcard{position:relative}
+.profcard>.iconbtn{position:absolute;top:4px;right:4px}
 .price{font-weight:800;color:var(--brand-dark)}
 .rx-badge{background:#fdf0e7;color:var(--warn);font-size:11px;font-weight:700;
   padding:2px 8px;border-radius:20px}
