@@ -33,6 +33,9 @@
       return;
     }
     if (tab === "catalog") return catalogView(chk.profile);
+    if (tab === "rx") return rxView();
+    if (tab === "orders") return ordersView();
+    if (tab === "riders") return ridersView();
     const names = { orders: "Order management", rx: "Prescription review", riders: "Rider management" };
     panel.innerHTML = '<div class="card"><p class="muted">' + names[tab] +
       " lands in a later phase. <button class='btn secondary small' id='so'>Sign out</button></p></div>";
@@ -173,5 +176,146 @@
 
   tabs.querySelectorAll(".chip").forEach((c) =>
     c.classList.toggle("active", c.dataset.tab === tab));
+  // ── Prescriptions: pharmacist review ─────────────────────────────────────
+  async function rxView() {
+    panel.innerHTML = '<div class="card"><b>Prescriptions</b><div id="rxlist" style="margin-top:8px"></div></div>';
+    const box = document.getElementById("rxlist");
+    try {
+      const { data, error } = await DB.sb.from("prescriptions")
+        .select("*,profiles(name)").order("created_at", { ascending: false }).limit(50);
+      if (error) throw error;
+      if (!data.length) { box.innerHTML = '<p class="muted">No prescriptions yet.</p>'; return; }
+      box.innerHTML = data.map((p) =>
+        '<div class="card"><div class="row" style="justify-content:space-between"><div><b>' +
+        esc((p.profiles && p.profiles.name) || "Customer") + "</b><br><span class='muted'>" +
+        new Date(p.created_at).toLocaleString() + "</span></div>" +
+        '<span class="status ' + p.status + '">' + p.status + "</span></div>" +
+        '<div class="row" style="margin-top:8px;gap:8px">' +
+        '<button class="btn secondary small" data-view="' + esc(p.image_url) + '">View</button>' +
+        (p.status === "pending"
+          ? '<button class="btn small" data-ap="' + p.id + '">Approve</button>' +
+            '<button class="btn danger small" data-rj="' + p.id + '">Reject</button>'
+          : "") + "</div></div>"
+      ).join("");
+      box.querySelectorAll("[data-view]").forEach((b) => (b.onclick = async () => {
+        const { data: s, error: e } = await DB.sb.storage.from("prescriptions").createSignedUrl(b.dataset.view, 600);
+        if (e) return DB.showErr(msg, e.message);
+        window.open(s.signedUrl, "_blank");
+      }));
+      const review = async (id, status) => {
+        const { error } = await DB.sb.from("prescriptions")
+          .update({ status, reviewed_at: new Date().toISOString() }).eq("id", id);
+        if (error) return DB.showErr(msg, error.message);
+        rxView();
+      };
+      box.querySelectorAll("[data-ap]").forEach((b) => (b.onclick = () => review(b.dataset.ap, "approved")));
+      box.querySelectorAll("[data-rj]").forEach((b) => (b.onclick = () => review(b.dataset.rj, "rejected")));
+    } catch (e) { DB.showErr(msg, e.message); }
+  }
+
+  // ── Orders: status pipeline + rider assignment ────────────────────────────
+  let ostat = "";
+  async function ordersView() {
+    panel.innerHTML =
+      '<div class="card"><b>Orders</b><div class="chips" id="of" style="margin-top:8px"></div>' +
+      '<div id="olist"></div></div>';
+    const statuses = ["", "placed", "confirmed", "preparing", "assigned",
+      "picked_up", "out_for_delivery", "delivered", "cancelled"];
+    const of = document.getElementById("of");
+    of.innerHTML = statuses.map((s) =>
+      '<button class="chip' + (s === ostat ? " active" : "") + '" data-s="' + s + '">' +
+      (s || "All").replace(/_/g, " ") + "</button>").join("");
+    of.onclick = (e) => {
+      const b = e.target.closest("[data-s]");
+      if (b) { ostat = b.dataset.s; ordersView(); }
+    };
+    const box = document.getElementById("olist");
+    try {
+      let qy = DB.sb.from("orders").select(
+        "*,order_items(qty,unit_price,medicines(name))," +
+        "customer:profiles!orders_customer_id_fkey(name,phone)," +
+        "rider:profiles!orders_rider_id_fkey(name)," +
+        "addresses(address_text,landmark)"
+      ).order("created_at", { ascending: false }).limit(50);
+      if (ostat) qy = qy.eq("status", ostat);
+      const { data, error } = await qy;
+      if (error) throw error;
+      const { data: riders } = await DB.sb.from("profiles").select("id,name").eq("role", "rider");
+      box.innerHTML = data.map((o) => orderCard(o, riders || [])).join("") ||
+        '<p class="muted">No orders.</p>';
+      box.onclick = async (e) => {
+        const b = e.target.closest("[data-act]");
+        if (!b) return;
+        const id = b.dataset.id;
+        const card = b.closest("[data-order]");
+        try {
+          if (b.dataset.act === "assign") {
+            const sel = card.querySelector("[data-rider]");
+            if (!sel.value) return DB.showErr(msg, "Pick a rider first.");
+            await setStatus(id, "assigned", { rider_id: sel.value });
+          } else {
+            await setStatus(id, b.dataset.act);
+          }
+          ordersView();
+        } catch (err) { DB.showErr(msg, err.message); }
+      };
+    } catch (e) { DB.showErr(msg, e.message); }
+  }
+
+  async function setStatus(id, status, extra) {
+    const { error } = await DB.sb.from("orders").update(Object.assign({ status }, extra)).eq("id", id);
+    if (error) throw error;
+  }
+
+  function orderCard(o, riders) {
+    const items = o.order_items.map((i) =>
+      "<div class='row' style='justify-content:space-between'><span>" + esc(i.medicines.name) +
+      " × " + i.qty + "</span><span>" + DB.money(i.unit_price * i.qty) + "</span></div>").join("");
+    let actions = "";
+    if (o.status === "placed")
+      actions = btn("confirmed", "Confirm", o.id) + btn("cancelled", "Cancel", o.id, "danger");
+    else if (o.status === "confirmed")
+      actions = btn("preparing", "Start preparing", o.id) + btn("cancelled", "Cancel", o.id, "danger");
+    else if (o.status === "preparing")
+      actions = '<select data-rider aria-label="Rider"><option value="">— rider —</option>' +
+        riders.map((r) => "<option value='" + r.id + "'>" + esc(r.name || "Rider") + "</option>").join("") +
+        "</select>" + btn("assign", "Assign rider", o.id);
+    else if (!["delivered", "cancelled"].includes(o.status))
+      actions = btn("cancelled", "Cancel", o.id, "danger");
+    return '<div class="card" data-order><div class="row" style="justify-content:space-between">' +
+      "<b>#" + o.id.slice(0, 8) + "</b>" +
+      '<span class="status ' + o.status + '">' + o.status.replace(/_/g, " ") + "</span></div>" +
+      '<p class="muted">' + new Date(o.created_at).toLocaleString() +
+      (o.customer ? " · " + esc(o.customer.name || "") + (o.customer.phone ? " · " + esc(o.customer.phone) : "") : "") +
+      (o.rider ? " · 🛵 " + esc(o.rider.name || "") : "") + "</p>" +
+      (o.addresses ? '<p class="muted">📍 ' + esc(o.addresses.address_text) +
+        (o.addresses.landmark ? " (" + esc(o.addresses.landmark) + ")" : "") + "</p>" : "") +
+      items +
+      '<div class="row" style="justify-content:space-between;margin-top:6px"><span>' +
+      esc(o.delivery_slot || "") + " · " + o.payment_method.toUpperCase() + "</span><b class='price'>" +
+      DB.money(o.total) + "</b></div>" +
+      (actions ? '<div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap">' + actions + "</div>" : "") +
+      "</div>";
+  }
+  function btn(act, label, id, kind) {
+    return '<button class="btn small ' + (kind || "") + '" data-act="' + act + '" data-id="' + id + '">' + label + "</button>";
+  }
+
+  // ── Riders ─────────────────────────────────────────────────────────────────
+  async function ridersView() {
+    panel.innerHTML = '<div class="card"><b>Riders</b><div id="rlist" style="margin-top:8px"></div>' +
+      '<p class="muted" style="margin-top:8px">To add a rider: they create an account in the rider app, then run ' +
+      "<code>update profiles set role='rider' where id='&lt;their-uuid&gt;';</code> in Supabase SQL.</p></div>";
+    const box = document.getElementById("rlist");
+    try {
+      const { data, error } = await DB.sb.from("profiles").select("id,name,phone").eq("role", "rider");
+      if (error) throw error;
+      box.innerHTML = data.map((r) =>
+        '<div class="row" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid #edf1ef"><div><b>' +
+        esc(r.name || "Rider") + "</b><br><span class='muted'>" + esc(r.phone || "") + "</span></div></div>"
+      ).join("") || '<p class="muted">No riders yet.</p>';
+    } catch (e) { DB.showErr(msg, e.message); }
+  }
+
   render();
 })();
