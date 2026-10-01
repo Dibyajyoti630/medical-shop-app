@@ -3,28 +3,70 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Medical Shop — Order Medicines</title>
+<title>CityCare Medicals — Order Medicines</title>
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-<header class="topbar"><h1>💊 Medical Shop</h1><div class="spacer"></div><span id="cartCount"></span></header>
+<header class="appbar">
+  <div class="brandrow">
+    <span class="logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6V3z" fill="#fff"/><path d="M4 20c4-1 8-4 11-9" stroke="#0ca26f" stroke-width="2.4" stroke-linecap="round"/></svg>
+    </span>
+    <div>
+      <div class="shopname">CityCare Medicals</div>
+      <button class="locbtn" id="locBtn">Banjara Hills • Hyderabad
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+    </div>
+  </div>
+  <button class="iconbtn" id="bellBtn" aria-label="Notifications">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#3c4742" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
+    <span class="dot-badge" aria-hidden="true"></span>
+  </button>
+</header>
 <main>
-  <div class="searchbar"><input id="q" type="search" placeholder="Search medicines…" aria-label="Search medicines"></div>
-  <div class="chips" id="cats"></div>
-  <div id="list"></div>
-  <div class="row" style="justify-content:center"><button class="btn secondary small" id="more">Load more</button></div>
-  <div id="msg"></div>
+  <div class="searchwrap">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#0ca26f" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+    <input id="q" type="search" placeholder="Search medicines, brands…" aria-label="Search medicines, brands">
+    <button class="micbtn" id="micBtn" aria-label="Voice search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#0ca26f" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg>
+    </button>
+  </div>
+
+  <div class="chips" id="cats" role="tablist" aria-label="Medicine forms"></div>
+
+  <div class="banner" aria-label="Offers">
+    <div class="slides" id="slides">
+      <div class="slide">
+        <div class="t"><h3>Free delivery on orders above ₹500</h3><p>On all medicines &amp; healthcare essentials • T&amp;C apply</p></div>
+        <svg class="art" viewBox="0 0 96 96" fill="none" aria-hidden="true"><path d="M20 38l28-12 28 12v30l-28 12-28-12V38z" stroke="#fff" stroke-width="4" stroke-linejoin="round" opacity=".95"/><path d="M20 38l28 12 28-12M48 50v30" stroke="#fff" stroke-width="4" stroke-linejoin="round" opacity=".95"/><circle cx="72" cy="26" r="11" fill="#fff"/><path d="M72 20a4.5 4.5 0 014.5 4.5C76.5 29 72 33 72 33s-4.5-4-4.5-8.5A4.5 4.5 0 0172 20z" fill="#0b8f63"/><circle cx="72" cy="24.5" r="1.8" fill="#fff"/></svg>
+      </div>
+      <a class="slide" href="account.html#rxupload" style="text-decoration:none">
+        <div class="t"><h3>Upload your prescription</h3><p>Our pharmacist verifies it in minutes</p></div>
+        <svg class="art" viewBox="0 0 96 96" fill="none" aria-hidden="true"><rect x="28" y="14" width="40" height="56" rx="6" stroke="#fff" stroke-width="4"/><path d="M38 30h20M38 40h20M38 50h12" stroke="#fff" stroke-width="4" stroke-linecap="round"/><rect x="40" y="6" width="16" height="12" rx="3" fill="#fff"/></svg>
+      </a>
+      <div class="slide">
+        <div class="t"><h3>1000+ medicines in stock</h3><p>Order before 8 PM for same-day delivery</p></div>
+        <svg class="art" viewBox="0 0 96 96" fill="none" aria-hidden="true"><path d="M28 60V32l20-10 20 10v28" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M28 60l20 10 20-10M48 70V44" stroke="#fff" stroke-width="4" stroke-linejoin="round"/><path d="M38 38l6 6 12-12" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+    </div>
+    <div class="sdots" id="sdots"></div>
+  </div>
+
+  <div class="sechead">
+    <h2>Popular Medicines</h2>
+    <button class="seeall" id="seeAll">See all ›</button>
+  </div>
+  <div class="pgrid" id="list"></div>
+  <div class="row" style="justify-content:center;margin-top:14px"><button class="btn secondary small" id="more">Load more</button></div>
+  <div id="msg" style="margin-top:12px"></div>
 </main>
-<nav class="bottomnav">
-  <a href="index.html" class="active"><span class="ico">🏠</span>Home</a>
-  <a href="cart.html"><span class="ico">🛒</span>Cart</a>
-  <a href="orders.html"><span class="ico">📦</span>Orders</a>
-  <a href="account.html"><span class="ico">👤</span>Account</a>
-</nav>
+<nav class="bottomnav" id="bnav"></nav>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="js/config.js"></script>
 <script src="js/db.js"></script>
 <script src="js/cart.js"></script>
+<script src="js/nav.js"></script>
 <script src="js/customer.js"></script>
 </body>
 </html>

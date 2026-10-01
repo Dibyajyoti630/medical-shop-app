@@ -7,12 +7,13 @@
 
   const PAGE = 20;
 
-  async function medicines({ q = "", category = "", page = 0 } = {}) {
+  async function medicines({ q = "", category = "", form = "", page = 0 } = {}) {
     let query = sb.from("medicines").select("*", { count: "exact" })
       .eq("is_active", true).not("price", "is", null)
       .order("name").range(page * PAGE, page * PAGE + PAGE - 1);
     if (q) query = query.ilike("name", `%${q.trim()}%`);
     if (category) query = query.eq("category", category);
+    if (form) query = query.eq("form", form);
     return query;
   }
 
@@ -21,6 +22,13 @@
       .select("category").eq("is_active", true).not("price", "is", null);
     if (error) throw error;
     return [...new Set(data.map(r => r.category))].sort();
+  }
+
+  async function forms() {
+    const { data, error } = await sb.from("medicines")
+      .select("form").eq("is_active", true).not("price", "is", null);
+    if (error) throw error;
+    return [...new Set(data.map(r => r.form))].sort();
   }
 
   // Generic form placeholder per medicine form (see catalog/images/)
@@ -43,5 +51,5 @@
     box.innerHTML = '<div class="err">' + esc(msg) + "</div>";
   }
 
-  window.DB = { sb, PAGE, medicines, categories, medImage, money, esc, showErr };
+  window.DB = { sb, PAGE, medicines, categories, forms, medImage, money, esc, showErr };
 })();

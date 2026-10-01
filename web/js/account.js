@@ -36,7 +36,7 @@
       '<input id="nland" placeholder="Landmark" style="flex:2" aria-label="Landmark"></div>' +
       '<textarea id="ntext" rows="2" placeholder="Full address" style="margin-top:8px" aria-label="Full address"></textarea>' +
       '<button class="btn" id="add" style="margin-top:8px">Save address</button></div>' +
-      '<div class="card"><h2 style="margin-bottom:8px">My prescriptions</h2>' +
+      '<div class="card" id="rxupload"><h2 style="margin-bottom:8px">My prescriptions</h2>' +
       (rxs.map((r) =>
         '<div class="row" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid #edf1ef"><div><b>Prescription</b><br><span class="muted">' +
         new Date(r.created_at).toLocaleString() + '</span></div><span class="status ' + r.status + '">' + r.status + "</span></div>"
