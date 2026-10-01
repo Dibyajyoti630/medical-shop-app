@@ -148,3 +148,10 @@ table.grid tr:last-child td { border-bottom: 0; }
   .admin-foot { padding: 0 14px 14px; text-align: center; }
   table.grid { font-size: 13px; }
 }
+
+/* ── Notification dropdown ─────────────────────────────────── */
+.notif-drop { position: fixed; top: 62px; right: 12px; width: min(360px, calc(100vw - 24px)); max-height: 70vh; overflow: auto; background: #fff; border: 1px solid #e6ecea; border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,.18); z-index: 300; }
+.notif-head { padding: 12px 14px 6px; font-weight: 700; font-size: 14px; }
+.notif-item { display: block; width: 100%; text-align: left; padding: 10px 14px; border: 0; border-top: 1px solid #f0f4f2; background: none; cursor: pointer; font-size: 14px; color: inherit; }
+.notif-item:hover { background: #f6faf8; }
+.notif-item small { color: var(--muted); display: block; margin-top: 2px; }

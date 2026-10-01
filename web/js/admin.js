@@ -94,8 +94,12 @@
       await show("medicines");
       var s = document.getElementById("medSearch"); if (s) s.focus();
     };
-    document.getElementById("bellBtn").onclick = function () { show("dashboard"); };
-    document.getElementById("bellBtn").title = "Things needing attention";
+    document.getElementById("bellBtn").onclick = function (e) { e.stopPropagation(); toggleNotifs(); };
+    document.getElementById("bellBtn").title = "Notifications";
+    document.addEventListener("click", function (e) {
+      var d = document.getElementById("notifDrop");
+      if (d && !d.hidden && !d.contains(e.target)) d.hidden = true;
+    });
     document.getElementById("supportLink").onclick = function (e) { e.preventDefault(); DB.toast("Call the shop owner — support number coming soon"); };
     view.addEventListener("click", onClick);
     view.addEventListener("change", onChange);
@@ -144,6 +148,54 @@
     rxEl.hidden = rxN === 0; rxEl.textContent = rxN;
     var n = rxN + ordN + lowN, bell = document.getElementById("bellBadge");
     bell.hidden = n === 0; bell.textContent = n > 99 ? "99+" : n;
+  }
+
+  // ── Notification dropdown ──────────────────────────────────────────────
+  function timeAgo(ts) {
+    var s = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
+    if (s < 60) return "just now";
+    var m = Math.floor(s / 60); if (m < 60) return m + "m ago";
+    var h = Math.floor(m / 60); if (h < 24) return h + "h ago";
+    return Math.floor(h / 24) + "d ago";
+  }
+  async function toggleNotifs() {
+    var d = document.getElementById("notifDrop");
+    if (!d) {
+      d = document.createElement("div");
+      d.id = "notifDrop"; d.className = "notif-drop"; d.hidden = true;
+      document.body.appendChild(d);
+      d.addEventListener("click", function (e) {
+        var b = e.target.closest("[data-nview]"); if (!b) return;
+        d.hidden = true;
+        medQ = b.dataset.nq || ""; medLowOnly = b.dataset.nlow === "1";
+        show(b.dataset.nview);
+      });
+    }
+    if (!d.hidden) { d.hidden = true; return; }
+    d.innerHTML = '<div class="notif-head">Notifications</div><div class="empty">Loading…</div>';
+    d.hidden = false;
+    try {
+      var res = await Promise.all([
+        DB.sb.from("prescriptions").select("id,created_at").eq("status", "pending").order("created_at", { ascending: false }).limit(5),
+        DB.sb.from("orders").select("id,total,status,created_at").in("status", ["placed", "awaiting_rx"]).order("created_at", { ascending: false }).limit(5),
+        DB.sb.from("medicines").select("id,name,stock").eq("is_active", true).lte("stock", LOW_STOCK).order("stock").limit(5),
+      ]);
+      if (res[0].error) throw res[0].error; if (res[1].error) throw res[1].error; if (res[2].error) throw res[2].error;
+      var items = [];
+      (res[0].data || []).forEach(function (p) {
+        items.push({ t: "Prescription awaiting review", s: timeAgo(p.created_at), v: "rx" });
+      });
+      (res[1].data || []).forEach(function (o) {
+        items.push({ t: (o.status === "awaiting_rx" ? "Rx order waiting" : "New order") + " " + shortId(o.id) + " • " + DB.money(o.total), s: timeAgo(o.created_at), v: "orders" });
+      });
+      (res[2].data || []).forEach(function (m) {
+        items.push({ t: esc(m.name) + " — only " + m.stock + " left", s: "Low stock", v: "medicines", low: "1" });
+      });
+      d.innerHTML = '<div class="notif-head">Notifications</div>' + (items.length ? items.map(function (it) {
+        return '<button class="notif-item" data-nview="' + it.v + '"' + (it.low ? ' data-nlow="1"' : "") + '><div><b>' + it.t +
+          "</b><small>" + it.s + " — tap to view</small></div></button>";
+      }).join("") : '<div class="empty">All clear — nothing needs attention.</div>');
+    } catch (err) { d.innerHTML = '<div class="notif-head">Notifications</div><div class="empty">Could not load.</div>'; }
   }
 
   // ── shared order fetch (orders + customer names + item lines) ────────────
