@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Upload Prescription — Medical Shop</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<header class="topbar" style="justify-content:center;position:relative">
+  <a href="index.html" style="position:absolute;left:16px;color:var(--brand);text-decoration:none;font-size:24px;line-height:1">←</a>
+  <h1>Upload Prescription</h1>
+  <button onclick="DB.toast('Need help? Call the store')" style="position:absolute;right:16px;color:var(--brand);font-size:20px;font-weight:700">?</button>
+</header>
+<main>
+  <div id="msg"></div>
+  <div id="wrap"></div>
+</main>
+<nav class="bottomnav" id="bnav"></nav>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js"></script>
+<script src="js/db.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/cart.js"></script>
+<script src="js/nav.js"></script>
+<script src="js/rxupload.js"></script>
+</body>
+</html>

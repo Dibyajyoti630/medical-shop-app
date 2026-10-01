@@ -91,6 +91,11 @@
     document.getElementById("pay-upi").onclick = () => DB.toast("UPI payments coming soon");
 
     document.getElementById("place").onclick = async () => {
+      if (!me.phone) {
+        msg.innerHTML = '<div class="err">Add your phone number in Profile to place orders. ' +
+          '<a href="account.html" style="color:var(--brand);font-weight:700">Go to Profile →</a></div>';
+        return;
+      }
       if (!addr) return DB.showErr(msg, "Please add a delivery address in Profile.");
       if (hasRx && !rxStatusHtml.includes("rx-ok")) return DB.showErr(msg, "Prescription required. Please upload in Account.");
       for (const m of items) {
