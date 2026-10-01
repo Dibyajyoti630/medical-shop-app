@@ -10,7 +10,10 @@
     if (!u) return null;
     const { data, error } = await DB.sb.from("profiles").select("*").eq("id", u.id).single();
     if (error && error.code === "PGRST116") { // first login: create customer row
-      const r = await DB.sb.from("profiles").insert({ id: u.id, role: "customer" }).select().single();
+      const r = await DB.sb.from("profiles").insert({
+        id: u.id, role: "customer",
+        name: (u.user_metadata || {}).full_name || null, // prefilled by Google OAuth
+      }).select().single();
       if (r.error) throw r.error;
       return r.data;
     }
@@ -32,12 +35,23 @@
     const { error } = await DB.sb.auth.signUp({ email, password });
     if (error) throw error;
   }
+  async function signInWithGoogle() {
+    // Redirects to Google; on return Supabase picks the session up from the URL
+    // (needs detectSessionInUrl: true) and lands back on this same page.
+    const { error } = await DB.sb.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: location.origin + location.pathname },
+    });
+    if (error) throw error;
+  }
   async function signOut() { await DB.sb.auth.signOut(); }
   // Renders a minimal email/password gate into `el`, then calls `next()`.
   function gate(el, next) {
     el.innerHTML =
       '<div class="card"><h2 style="margin-bottom:8px">Sign in</h2>' +
       '<div id="amsg"></div>' +
+      '<button class="btn secondary" id="agoogle" style="width:100%;margin:6px 0 4px">Continue with Google</button>' +
+      '<div class="muted" style="text-align:center;margin:8px 0">or</div>' +
       '<label for="aemail">Email</label><input id="aemail" type="email" autocomplete="email">' +
       '<label for="apass">Password</label><input id="apass" type="password" autocomplete="current-password">' +
       '<div class="row" style="margin-top:14px">' +
@@ -53,8 +67,10 @@
     };
     document.getElementById("ago").onclick = () =>
       go(async (em, pw) => signIn(em.trim(), pw));
+    document.getElementById("agoogle").onclick = () =>
+      go(() => signInWithGoogle());
     document.getElementById("areg").onclick = () =>
       go(async (em, pw) => { await signUp(em.trim(), pw); await signIn(em.trim(), pw); });
   }
-  window.Auth = { user, profile, requireRole, signIn, signUp, signOut, gate };
+  window.Auth = { user, profile, requireRole, signIn, signUp, signInWithGoogle, signOut, gate };
 })();

@@ -4,7 +4,7 @@
   if (!window.supabase) throw new Error("supabase-js CDN not loaded");
   const { SUPABASE_URL, SUPABASE_ANON_KEY } = window.APP_CONFIG;
   const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { autoRefreshToken: true, persistSession: true, detectSessionInUrl: false },
+    auth: { autoRefreshToken: true, persistSession: true, detectSessionInUrl: true }, // true: required for OAuth (Google) redirect callback
   });
 
   const PAGE = 20;
