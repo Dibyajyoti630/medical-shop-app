@@ -17,109 +17,97 @@
     }
     const sub = items.reduce((a, m) => a + m.price * m.qty, 0);
     const fee = sub >= FREE_ABOVE ? 0 : FEE;
-    wrap.innerHTML =
-      '<div class="card" style="padding:6px"><table class="data"><tbody>' +
-      items.map((m) =>
-        "<tr><td><b>" + esc(m.name) + "</b><br><span class='muted'>" + esc(m.strength) +
-        " · " + DB.money(m.price) + "</span></td>" +
-        "<td><div class='qty'><button data-a='-1' data-id='" + m.id + "'>−</button><b>" + m.qty +
-        "</b><button data-a='1' data-id='" + m.id + "'>+</button></div></td>" +
-        "<td style='text-align:right'><b>" + DB.money(m.price * m.qty) + "</b></td></tr>"
-      ).join("") + "</tbody></table></div>" +
-      '<div class="card"><div class="row" style="justify-content:space-between"><span>Subtotal</span><b>' +
-      DB.money(sub) + "</b></div>" +
-      '<div class="row" style="justify-content:space-between"><span>Delivery</span><b>' +
-      (fee ? DB.money(fee) : "Free") + '</b></div><p class="muted">Free delivery above ' +
-      DB.money(FREE_ABOVE) + "</p>" +
-      '<div class="row" style="justify-content:space-between;font-size:17px"><span>Total</span><b class="price">' +
-      DB.money(sub + fee) + "</b></div></div>" +
-      '<div id="gate"></div>';
-
-    wrap.querySelectorAll("[data-a]").forEach((b) => (b.onclick = async () => {
-      const m = items.find((x) => x.id === b.dataset.id);
-      Cart.setQty(m.id, m.qty + Number(b.dataset.a), m.stock);
-      render();
-    }));
+    const tot = sub + fee;
 
     const chk = await Auth.requireRole("customer").catch(() => ({ ok: false, reason: "signin" }));
-    if (!chk.ok) return Auth.gate(document.getElementById("gate"), render);
-    checkoutForm(chk.profile, items, sub, fee);
-  }
+    if (!chk.ok) {
+      // ponytail: simplest fallback for unauth cart
+      wrap.innerHTML = '<div id="gate"></div>';
+      return Auth.gate(document.getElementById("gate"), render);
+    }
+    const me = chk.profile;
 
-  async function checkoutForm(me, items, sub, fee) {
-    const gate = document.getElementById("gate");
     let addrs = [];
+    let rxStatusHtml = '';
+    const hasRx = items.some(m => m.rx_required);
     try {
-      const { data, error } = await DB.sb.from("addresses").select("*").eq("customer_id", me.id).order("created_at");
-      if (error) throw error;
-      addrs = data;
+      const p = [DB.sb.from("addresses").select("*").eq("customer_id", me.id).order("created_at")];
+      if (hasRx) p.push(DB.sb.from("prescriptions").select("id").eq("customer_id", me.id).eq("status", "approved").limit(1));
+      const results = await Promise.all(p);
+      addrs = results[0].data || [];
+      if (hasRx) {
+        if (results[1] && results[1].data.length) rxStatusHtml = '<div class="pill rx-ok">✓ Prescription attached</div>';
+        else rxStatusHtml = '<div class="card err">Order contains Rx medicines. Prescription required to place order.</div>';
+      }
     } catch (e) { return DB.showErr(msg, e.message); }
 
-    gate.innerHTML =
-      '<div class="card"><h2 style="margin-bottom:8px">Delivery address</h2>' +
-      (addrs.length
-        ? '<select id="addr" aria-label="Delivery address">' + addrs.map((a) =>
-          "<option value='" + a.id + "'>" + esc(a.label) + ": " + esc(a.address_text) + "</option>").join("") + "</select>"
-        : '<p class="muted">No saved address yet — add one below.</p><select id="addr" style="display:none"></select>') +
-      '<div class="row" style="margin-top:8px"><input id="nlabel" placeholder="Label (Home)" style="flex:1" aria-label="Label">' +
-      '<input id="nland" placeholder="Landmark" style="flex:2" aria-label="Landmark"></div>' +
-      '<textarea id="ntext" rows="2" placeholder="Full address" style="margin-top:8px" aria-label="Full address"></textarea>' +
-      '<button class="btn secondary" id="addaddr" style="margin-top:8px">Save address</button></div>' +
-      '<div class="card"><h2 style="margin-bottom:8px">Delivery slot</h2>' +
-      '<select id="slot" aria-label="Delivery slot"><option>Within 2 hours</option>' +
-      "<option>Today evening</option><option>Tomorrow morning</option></select>" +
-      '<h2 style="margin:12px 0 8px">Payment</h2>' +
-      '<p><b>Cash on Delivery</b> <span class="muted">(UPI coming soon)</span></p>' +
-      '<button class="btn" id="place" style="margin-top:14px">Place order · ' + DB.money(sub + fee) + "</button></div>";
+    const addr = addrs.length ? addrs[0] : null;
 
-    document.getElementById("addaddr").onclick = async () => {
-      const text = document.getElementById("ntext").value.trim();
-      if (!text) return DB.showErr(msg, "Enter the full address.");
-      const { error } = await DB.sb.from("addresses").insert({
-        customer_id: me.id,
-        label: document.getElementById("nlabel").value.trim() || "Home",
-        landmark: document.getElementById("nland").value.trim(),
-        address_text: text,
-      });
-      if (error) return DB.showErr(msg, error.message);
+    wrap.innerHTML = rxStatusHtml +
+      '<div class="card">' +
+        (addr
+          ? '<div class="row" style="align-items:flex-start"><div class="circle-icon" style="background:transparent;color:var(--brand);margin-top:-4px">📍</div><div style="flex:1"><b>' + esc(addr.label) + '</b><div class="muted">' + esc(addr.address_text) + '</div></div><a href="account.html" class="btn secondary small" style="color:var(--brand);border:1px solid var(--brand);background:transparent;padding:6px 12px;height:auto">Change</a></div>'
+          : '<p class="muted">No saved address.</p><a href="account.html" class="btn secondary small" style="display:inline-block;margin-top:8px">Add Address</a>') +
+      '</div>' +
+      '<div class="card"><h2 style="font-size:16px;margin-bottom:12px">Delivery Slot</h2>' +
+        '<div class="chips" id="slots">' +
+          '<div class="chip active">🕒 Today 4–6 PM</div>' +
+          '<div class="chip">🕒 Today 6–8 PM</div>' +
+          '<div class="chip">🕒 Tomorrow 9–11 AM</div>' +
+        '</div>' +
+      '</div>' +
+      '<h2 style="font-size:16px;margin:16px 4px 8px">Order Summary</h2>' +
+      items.map(m =>
+        '<div class="card row" style="align-items:flex-start"><div class="circle-icon">💊</div><div style="flex:1"><b>' + esc(m.name) + '</b><div class="muted">' + esc(m.strength) + ' • ' + esc(m.pack) + '</div></div>' +
+        '<div style="text-align:right"><div class="stepper" style="justify-content:flex-end"><button data-a="-1" data-id="' + m.id + '">−</button><b class="sqty">' + m.qty + '</b><button data-a="1" data-id="' + m.id + '">+</button></div><b style="display:block;margin-top:8px">' + DB.money(m.price * m.qty) + '</b></div></div>'
+      ).join('') +
+      '<div class="card">' +
+        '<div class="row" style="justify-content:space-between;margin-bottom:8px"><span>Subtotal</span><b>' + DB.money(sub) + '</b></div>' +
+        '<div class="row" style="justify-content:space-between;margin-bottom:8px"><span>Delivery Fee</span><b' + (fee === 0 ? ' style="color:var(--brand)"' : '') + '>' + (fee === 0 ? 'FREE' : DB.money(fee)) + '</b></div>' +
+        '<hr style="border:0;border-top:1px dashed #d4dcd9;margin:12px 0">' +
+        '<div class="row" style="justify-content:space-between;font-size:17px"><b>Total</b><b class="price">' + DB.money(tot) + '</b></div>' +
+      '</div>' +
+      '<h2 style="font-size:16px;margin:16px 4px 8px">Payment Method</h2>' +
+      '<div class="card row" id="pay-upi" style="cursor:pointer"><div class="circle-icon" style="background:transparent;font-size:24px">📱</div><div style="flex:1"><b>UPI</b><div class="muted">PhonePe • GPay • Paytm</div></div><input type="radio" name="pay" disabled></div>' +
+      '<div class="card row active-pay" id="pay-cod" style="cursor:pointer;border:2px solid var(--brand)"><div class="circle-icon" style="background:transparent;font-size:24px">💵</div><div style="flex:1"><b>Cash on Delivery</b><div class="muted">Pay when delivery arrives</div></div><input type="radio" name="pay" checked></div>' +
+      '<button class="btn" id="place" style="margin-top:14px;height:52px;font-size:17px">🔒 Place Order</button>' +
+      '<p class="muted" style="text-align:center;margin-top:12px;font-size:12px">You can review and cancel before the rider is assigned.</p>';
+
+    wrap.querySelectorAll("[data-a]").forEach(b => b.onclick = () => {
+      const m = items.find(x => x.id === b.dataset.id);
+      Cart.setQty(m.id, m.qty + Number(b.dataset.a), m.stock);
       render();
-    };
-    document.getElementById("place").onclick = () => placeOrder(me, items, sub, fee);
-  }
+    });
 
-  async function placeOrder(me, items, sub, fee) {
-    msg.innerHTML = "";
-    const addrSel = document.getElementById("addr");
-    const address_id = addrSel && addrSel.value ? addrSel.value : null;
-    if (!address_id) return DB.showErr(msg, "Add a delivery address first.");
+    let selSlot = "Today 4–6 PM";
+    wrap.querySelectorAll("#slots .chip").forEach(c => c.onclick = () => {
+      wrap.querySelectorAll("#slots .chip").forEach(x => x.classList.remove("active"));
+      c.classList.add("active");
+      selSlot = c.innerText.replace('🕒 ', '');
+    });
 
-    // Rx gate: any Rx item needs an approved prescription on file (upload UI: Phase C)
-    if (items.some((m) => m.rx_required)) {
-      const { data, error } = await DB.sb.from("prescriptions").select("id")
-        .eq("customer_id", me.id).eq("status", "approved").limit(1);
-      if (error) return DB.showErr(msg, error.message);
-      if (!data.length) {
-        return DB.showErr(msg,
-          "This order has prescription medicines. Upload a prescription from Account → My prescriptions — the pharmacist will verify it, then you can order.");
+    document.getElementById("pay-upi").onclick = () => DB.showErr(msg, "UPI payments coming soon");
+
+    document.getElementById("place").onclick = async () => {
+      if (!addr) return DB.showErr(msg, "Please add a delivery address in Profile.");
+      if (hasRx && !rxStatusHtml.includes("rx-ok")) return DB.showErr(msg, "Prescription required. Please upload in Account.");
+      for (const m of items) {
+        if (m.qty > m.stock) return DB.showErr(msg, esc(m.name) + " only has " + m.stock + " in stock. Adjust quantity.");
       }
-    }
-    // re-check stock+price before placing
-    for (const m of items) {
-      if (m.qty > m.stock) return DB.showErr(msg, esc(m.name) + " only has " + m.stock + " in stock. Adjust quantity.");
-    }
-    try {
-      const { data: order, error } = await DB.sb.from("orders").insert({
-        customer_id: me.id, address_id,
-        status: "placed", subtotal: sub, delivery_fee: fee, total: sub + fee,
-        payment_method: "cod", delivery_slot: document.getElementById("slot").value,
-      }).select("id").single();
-      if (error) throw error;
-      const lines = items.map((m) => ({ order_id: order.id, medicine_id: m.id, qty: m.qty, unit_price: m.price }));
-      const { error: e2 } = await DB.sb.from("order_items").insert(lines);
-      if (e2) throw e2;
-      Cart.clear();
-      location.href = "orders.html";
-    } catch (e) { DB.showErr(msg, e.message); }
+      try {
+        const { data: order, error } = await DB.sb.from("orders").insert({
+          customer_id: me.id, address_id: addr.id,
+          status: "placed", subtotal: sub, delivery_fee: fee, total: tot,
+          payment_method: "cod", delivery_slot: selSlot,
+        }).select("id").single();
+        if (error) throw error;
+        const lines = items.map(m => ({ order_id: order.id, medicine_id: m.id, qty: m.qty, unit_price: m.price }));
+        const { error: e2 } = await DB.sb.from("order_items").insert(lines);
+        if (e2) throw e2;
+        Cart.clear();
+        location.href = "orders.html";
+      } catch (e) { DB.showErr(msg, e.message); }
+    };
   }
 
   render();
