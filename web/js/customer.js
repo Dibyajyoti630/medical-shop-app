@@ -135,7 +135,7 @@
   });
 
   document.getElementById("bellBtn").addEventListener("click", () => toast("No new notifications"));
-  document.getElementById("locBtn").addEventListener("click", () => toast("Delivering in Banjara Hills, Hyderabad"));
+  document.getElementById("locBtn").addEventListener("click", () => toast("Delivering in Uttarpada, Jaleswar"));
 
   loadForms();
   load();
