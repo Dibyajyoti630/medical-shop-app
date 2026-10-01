@@ -100,6 +100,21 @@
     view.addEventListener("change", onChange);
     view.addEventListener("input", function (e) {
       if (e.target.id === "medSearch") { medQ = e.target.value.trim(); loadMeds(); }
+      if (e.target.id === "itemSearch") {
+        var q = e.target.value.trim(), res = document.getElementById("itemResults");
+        var host = document.getElementById("itemEditor");
+        if (!res || !host) return;
+        if (q.length < 2) { res.innerHTML = ""; return; }
+        var orderId = host.dataset.order;
+        DB.sb.from("medicines").select("id,name,strength,price").ilike("name", "%" + q + "%")
+          .eq("is_active", true).limit(8).then(function (r) {
+            var el = document.getElementById("itemResults"); if (!el) return;
+            el.innerHTML = ((r.data || []).map(function (m) {
+              return '<button class="chip" style="margin:4px 6px 0 0" data-act="line-pick" data-id="' + m.id + '" data-order="' + orderId + '">' +
+                esc(m.name) + (m.strength ? " " + esc(m.strength) : "") + " — ₹" + m.price + "</button>";
+            }).join("") || '<p class="muted">No matches.</p>');
+          });
+      }
     });
   }
 
@@ -151,6 +166,8 @@
     var adv = NEXT[o.status] ? '<button class="btn sm" data-act="adv" data-id="' + o.id + '" data-to="' + NEXT[o.status] + '">→ ' + esc(LBL[NEXT[o.status]]) + "</button>" : "";
     var cancel = (o.status !== "delivered" && o.status !== "cancelled")
       ? '<button class="btn sm danger" data-act="cancel" data-id="' + o.id + '">Cancel</button>' : "";
+    var itemsBtn = (o.status !== "delivered" && o.status !== "cancelled")
+      ? '<button class="btn sm" data-act="items" data-id="' + o.id + '">Items</button>' : "";
     var rxBtn = o.prescription_id
       ? '<button class="btn sm" data-act="rximg" data-id="' + o.prescription_id + '">View Rx</button>' : "";
     var itemsCell = (x.items[o.id] && x.items[o.id].length) ? itemSummary(x.items[o.id])
@@ -160,7 +177,40 @@
       "<td class='items-cell'>" + itemsCell + "</td>" +
       "<td><b>" + DB.money(o.total) + "</b></td>" +
       "<td>" + pill(o.status) + "</td>" +
-      '<td><div class="row-actions">' + adv + rxBtn + cancel + "</div></td></tr>";
+      '<td><div class="row-actions">' + adv + itemsBtn + rxBtn + cancel + "</div></td></tr>";
+  }
+
+  // ── Order items editor (price up a prescription order after the customer call)
+  async function recalcOrder(orderId) {
+    var li = await DB.sb.from("order_items").select("qty,unit_price").eq("order_id", orderId);
+    if (li.error) throw li.error;
+    var sub = (li.data || []).reduce(function (s, l) { return s + Number(l.qty) * Number(l.unit_price); }, 0);
+    var fee = sub === 0 ? 0 : (sub >= 499 ? 0 : 30);
+    var u = await DB.sb.from("orders").update({ subtotal: sub, delivery_fee: fee, total: sub + fee }).eq("id", orderId);
+    if (u.error) throw u.error;
+  }
+  async function editItems(orderId) {
+    var host = document.getElementById("itemEditor"); if (!host) return;
+    host.dataset.order = orderId;
+    var o = await DB.sb.from("orders").select("id,total").eq("id", orderId).single();
+    if (o.error) throw o.error;
+    var li = await DB.sb.from("order_items").select("id,qty,unit_price,medicines(name,strength)").eq("order_id", orderId);
+    if (li.error) throw li.error;
+    var rows = (li.data || []).map(function (l) {
+      var m = l.medicines || {};
+      return "<tr><td><b>" + esc(m.name || "?") + "</b>" + (m.strength ? "<br><small class='muted'>" + esc(m.strength) + "</small>" : "") + "</td>" +
+        '<td><input class="mini-input" type="number" min="1" value="' + l.qty + '" data-act="line-qty" data-id="' + l.id + '" data-order="' + orderId + '" style="width:64px"></td>' +
+        '<td><input class="mini-input" type="number" min="0" step="0.01" value="' + l.unit_price + '" data-act="line-price" data-id="' + l.id + '" data-order="' + orderId + '" style="width:92px"></td>' +
+        "<td><b>" + DB.money(l.qty * l.unit_price) + "</b></td>" +
+        '<td><button class="btn sm danger" data-act="line-del" data-id="' + l.id + '" data-order="' + orderId + '">Remove</button></td></tr>';
+    }).join("");
+    host.innerHTML = '<div class="card" style="border:1px solid var(--brand)"><div class="card-head"><h3>Items — ' + shortId(orderId) + '</h3>' +
+      '<button class="btn sm ghost" data-act="items-close">Close</button></div>' +
+      '<table class="grid"><tr><th>Medicine</th><th>Qty</th><th>Price ₹</th><th></th><th></th></tr>' +
+      (rows || '<tr><td colspan="5" class="muted">No items yet — add medicines below after the customer call.</td></tr>') + "</table>" +
+      '<input class="searchbar" id="itemSearch" placeholder="Search medicine to add…" style="margin-top:10px"><div id="itemResults"></div>' +
+      '<p class="muted" style="margin-top:10px">Totals update automatically (free delivery above ₹499).</p></div>';
+    host.scrollIntoView({ block: "nearest" });
   }
 
   // ── Dashboard ────────────────────────────────────────────────────────────
@@ -223,7 +273,7 @@
       '<div class="chips">' + FILTERS.map(function (f) {
         return '<button class="chip' + (f === orderFilter ? " active" : "") + '" data-act="filter" data-f="' + f + '">' +
           (f === "all" ? "All" : esc(LBL[f])) + "</button>";
-      }).join("") + '</div><div class="card"><div id="olist"><div class="empty">Loading…</div></div></div>';
+      }).join("") + '</div><div id="itemEditor"></div><div class="card"><div id="olist"><div class="empty">Loading…</div></div></div>';
     await loadOrders();
   }
   async function loadOrders() {
@@ -463,6 +513,25 @@
         if (c.error) throw c.error;
         DB.toast("Order cancelled"); await show(cur, true);
       }
+      else if (act === "items") { await editItems(id); }
+      else if (act === "items-close") { document.getElementById("itemEditor").innerHTML = ""; }
+      else if (act === "line-del") {
+        var dd = await DB.sb.from("order_items").delete().eq("id", id);
+        if (dd.error) throw dd.error;
+        await recalcOrder(b.dataset.order);
+        DB.toast("Item removed"); await editItems(b.dataset.order); await loadOrders();
+      }
+      else if (act === "line-pick") {
+        var mp = await DB.sb.from("medicines").select("price").eq("id", id).single();
+        if (mp.error) throw mp.error;
+        var ni = await DB.sb.from("order_items").insert({ order_id: b.dataset.order, medicine_id: id, qty: 1, unit_price: mp.data.price });
+        if (ni.error) throw ni.error;
+        await recalcOrder(b.dataset.order);
+        DB.toast("Item added");
+        var si = document.getElementById("itemSearch"); if (si) si.value = "";
+        var sr = document.getElementById("itemResults"); if (sr) sr.innerHTML = "";
+        await editItems(b.dataset.order); await loadOrders();
+      }
       else if (act === "med-save") {
         var v = rowVals(id);
         var u = await DB.sb.from("medicines").update({ price: v.price, stock: v.stock == null ? 0 : v.stock }).eq("id", id);
@@ -495,8 +564,40 @@
           var rel = await DB.sb.from("orders").update({ status: "confirmed" })
             .eq("customer_id", pc.data.customer_id).eq("status", "awaiting_rx");
           if (rel.error) throw rel.error;
+          DB.toast("Prescription approved");
         }
-        DB.toast("Prescription " + stt); updateBadges(); await show("rx", true);
+        if (stt === "rejected") {
+          // Remove only Rx-required lines from waiting orders tied to this
+          // prescription; non-Rx medicines stay and the order proceeds.
+          var wo = await DB.sb.from("orders").select("id").eq("prescription_id", id).eq("status", "awaiting_rx");
+          if (wo.error) throw wo.error;
+          var touched = 0;
+          for (var oi = 0; oi < (wo.data || []).length; oi++) {
+            var o = wo.data[oi];
+            var li = await DB.sb.from("order_items").select("id,qty,unit_price,medicines(rx_required)").eq("order_id", o.id);
+            if (li.error) throw li.error;
+            var keep = [], drop = [];
+            (li.data || []).forEach(function (l) {
+              ((l.medicines && l.medicines.rx_required) ? drop : keep).push(l);
+            });
+            for (var di = 0; di < drop.length; di++) {
+              var dr = await DB.sb.from("order_items").delete().eq("id", drop[di].id);
+              if (dr.error) throw dr.error;
+            }
+            if (drop.length) touched++;
+            if (!keep.length) {
+              var co = await DB.sb.from("orders").update({ status: "cancelled" }).eq("id", o.id);
+              if (co.error) throw co.error;
+            } else {
+              var sub2 = keep.reduce(function (s, l) { return s + Number(l.qty) * Number(l.unit_price); }, 0);
+              var fee2 = sub2 >= 499 ? 0 : 30;
+              var uo = await DB.sb.from("orders").update({ status: "placed", subtotal: sub2, delivery_fee: fee2, total: sub2 + fee2 }).eq("id", o.id);
+              if (uo.error) throw uo.error;
+            }
+          }
+          DB.toast("Prescription rejected" + (touched ? " — Rx items removed from " + touched + " order(s)" : ""));
+        }
+        updateBadges(); await show("rx", true);
       }
       else if (act === "rx-view") { window.open(b.dataset.url, "_blank"); }
       else if (act === "rximg") {
@@ -517,6 +618,18 @@
     if (b) {
       DB.sb.from("medicines").update({ is_active: b.checked }).eq("id", b.dataset.id).then(function (r) {
         DB.toast(r.error ? "Error: " + r.error.message : (b.checked ? "Live on store" : "Hidden from store"));
+      });
+      return;
+    }
+    var lq = e.target.closest("[data-act='line-qty']"), lp = e.target.closest("[data-act='line-price']");
+    if (lq || lp) {
+      var t = lq || lp, patch = {};
+      if (lq) patch.qty = Math.max(1, Number(t.value) || 1);
+      else patch.unit_price = Math.max(0, Number(t.value) || 0);
+      DB.sb.from("order_items").update(patch).eq("id", t.dataset.id).then(async function (r) {
+        if (r.error) { DB.toast("Error: " + r.error.message); return; }
+        try { await recalcOrder(t.dataset.order); await editItems(t.dataset.order); await loadOrders(); }
+        catch (err) { DB.toast("Error: " + err.message); }
       });
       return;
     }

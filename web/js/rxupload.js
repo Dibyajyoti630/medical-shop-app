@@ -34,11 +34,17 @@
     const me = chk.profile;
 
     let rxs = [];
+    let orderedRx = {};
     try {
       const { data, error } = await DB.sb.from("prescriptions").select("*")
         .eq("customer_id", me.id).order("created_at", { ascending: false });
       if (error) throw error;
       rxs = data;
+      // Prescriptions already tied to an open order can't be ordered twice.
+      const { data: oo } = await DB.sb.from("orders").select("prescription_id")
+        .eq("customer_id", me.id).not("prescription_id", "is", null)
+        .not("status", "in", "(cancelled,delivered)");
+      (oo || []).forEach(o => { orderedRx[o.prescription_id] = 1; });
     } catch (e) { return DB.showErr(msg, e.message); }
 
     wrap.innerHTML =
@@ -48,9 +54,9 @@
         '<div><b>Prescription</b><br><span class="muted">' +
         new Date(r.created_at).toLocaleString() + '</span><br>' +
         '<span class="status ' + r.status + '">' + esc(r.status) + '</span></div>' +
-        ((r.status === "pending" || r.status === "approved")
+        ((r.status === "pending" || r.status === "approved") && !orderedRx[r.id]
           ? '<button class="btn secondary small" data-rxorder="' + r.id + '" data-st="' + r.status + '">Order</button>'
-          : '') +
+          : (orderedRx[r.id] ? '<span class="muted" style="font-size:13px">Ordered</span>' : '')) +
         '</div>'
       ).join("") || '<p class="muted">No prescriptions uploaded yet.</p>') +
       '<p class="muted" style="margin-top:10px">Want medicines directly from a prescription? Upload it below, then tap <b>Order</b> — the pharmacist will call you to confirm the medicines and total.</p>' +
@@ -92,10 +98,10 @@
     // pharmacist to fulfil (medicines confirmed over a call).
     wrap.onclick = async (e) => {
       const b = e.target.closest("[data-rxorder]");
-      if (!b) return;
-      if (!confirm("Place an order with this prescription? The pharmacist will call you to confirm the medicines and total.")) return;
+      if (!b || b.disabled) return;
       b.disabled = true;
       try {
+        if (!confirm("Place an order with this prescription? The pharmacist will call you to confirm the medicines and total.")) return;
         const { data: addrs, error: aErr } = await DB.sb.from("addresses").select("id")
           .eq("customer_id", me.id).order("created_at").limit(1);
         if (aErr) throw aErr;
@@ -109,7 +115,8 @@
         if (error) throw error;
         DB.toast("Order placed — pharmacist will call you");
         location.href = "orders.html";
-      } catch (err) { DB.showErr(msg, err.message); b.disabled = false; }
+      } catch (err) { DB.showErr(msg, err.message); }
+      finally { b.disabled = false; }
     };
   }
 

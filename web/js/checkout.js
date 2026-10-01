@@ -97,17 +97,20 @@
     document.getElementById("pay-upi").onclick = () => DB.toast("UPI payments coming soon");
 
     document.getElementById("place").onclick = async () => {
-      if (!me.phone) {
-        msg.innerHTML = '<div class="err">Add your phone number in Profile to place orders. ' +
-          '<a href="account.html" style="color:var(--brand);font-weight:700">Go to Profile →</a></div>';
-        return;
-      }
-      if (!addr) return DB.showErr(msg, "Please add a delivery address in Profile.");
-      if (hasRx && !rx) return DB.showErr(msg, "Prescription required. Please upload in Account.");
-      for (const m of items) {
-        if (m.qty > m.stock) return DB.showErr(msg, esc(m.name) + " only has " + m.stock + " in stock. Adjust quantity.");
-      }
+      const btn = document.getElementById("place");
+      if (btn.disabled) return;
+      btn.disabled = true;
       try {
+        if (!me.phone) {
+          msg.innerHTML = '<div class="err">Add your phone number in Profile to place orders. ' +
+            '<a href="account.html" style="color:var(--brand);font-weight:700">Go to Profile →</a></div>';
+          return;
+        }
+        if (!addr) return DB.showErr(msg, "Please add a delivery address in Profile.");
+        if (hasRx && !rx) return DB.showErr(msg, "Prescription required. Please upload in Account.");
+        for (const m of items) {
+          if (m.qty > m.stock) return DB.showErr(msg, esc(m.name) + " only has " + m.stock + " in stock. Adjust quantity.");
+        }
         const { data: order, error } = await DB.sb.from("orders").insert({
           customer_id: me.id, address_id: addr.id,
           prescription_id: hasRx && rx ? rx.id : null,
@@ -122,6 +125,7 @@
         Cart.clear();
         location.href = "orders.html";
       } catch (e) { DB.showErr(msg, e.message); }
+      finally { btn.disabled = false; }
     };
   }
 
