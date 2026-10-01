@@ -68,7 +68,14 @@
     paintIcons(document);
     var r = await Auth.requireRole("admin");
     if (r.reason === "signin") { Auth.gate(view, boot); return; }
-    if (r.reason === "forbidden") { view.innerHTML = '<div class="card empty">This page is for shop admins only.</div>'; return; }
+    if (r.reason === "forbidden") {
+      var who = r.profile ? esc(r.profile.name || r.profile.phone || "this account") : "this account";
+      view.innerHTML = '<div class="card empty">Signed in as <b>' + who + '</b> — this page is for shop admins only.<br>' +
+        '<span class="muted">Make this account admin with the SQL query, then refresh the page.</span><br><br>' +
+        '<button class="btn" id="admSignout" style="max-width:240px;margin:0 auto">Sign out</button></div>';
+      document.getElementById("admSignout").onclick = async function () { await Auth.signOut(); location.reload(); };
+      return;
+    }
     var nm = r.profile.name || "Admin";
     document.getElementById("adminName").textContent = nm;
     document.getElementById("adminAvatar").textContent = nm.trim().charAt(0).toUpperCase();

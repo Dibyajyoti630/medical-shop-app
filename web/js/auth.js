@@ -24,7 +24,7 @@
   async function requireRole(role) {
     const p = await profile();
     if (!p) return { ok: false, reason: "signin" };
-    if (p.role !== role && p.role !== "admin") return { ok: false, reason: "forbidden" };
+    if (p.role !== role && p.role !== "admin") return { ok: false, reason: "forbidden", profile: p };
     return { ok: true, profile: p };
   }
   async function signIn(email, password) {
