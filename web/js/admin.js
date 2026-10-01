@@ -476,8 +476,15 @@
       }
       else if (act === "rx-ok" || act === "rx-no") {
         var stt = act === "rx-ok" ? "approved" : "rejected";
+        var pc = await DB.sb.from("prescriptions").select("customer_id").eq("id", id).single();
         var rr = await DB.sb.from("prescriptions").update({ status: stt, reviewed_at: new Date().toISOString() }).eq("id", id);
         if (rr.error) throw rr.error;
+        if (stt === "approved" && pc.data) {
+          // Release this customer's waiting orders into the normal flow.
+          var rel = await DB.sb.from("orders").update({ status: "confirmed" })
+            .eq("customer_id", pc.data.customer_id).eq("status", "awaiting_rx");
+          if (rel.error) throw rel.error;
+        }
         DB.toast("Prescription " + stt); updateBadges(); await show("rx", true);
       }
       else if (act === "rx-view") { window.open(b.dataset.url, "_blank"); }

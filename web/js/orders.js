@@ -3,6 +3,9 @@
   "use strict";
   const list = document.getElementById("list"), msg = document.getElementById("msg");
   const esc = DB.esc;
+  const LBL = { awaiting_rx: "Awaiting prescription approval", placed: "Placed", confirmed: "Confirmed",
+    preparing: "Preparing", assigned: "Assigned", picked_up: "Picked up",
+    out_for_delivery: "Out for delivery", delivered: "Delivered", cancelled: "Cancelled" };
 
   async function render() {
     const chk = await Auth.requireRole("customer").catch(() => ({ ok: false, reason: "signin" }));
@@ -19,7 +22,7 @@
       list.innerHTML = data.map((o) =>
         '<div class="card"><div class="row" style="justify-content:space-between">' +
         "<b>#" + o.id.slice(0, 8) + "</b>" +
-        '<span class="status ' + o.status + '">' + o.status.replace(/_/g, " ") + "</span></div>" +
+        '<span class="status ' + o.status + '">' + (LBL[o.status] || o.status.replace(/_/g, " ")) + "</span></div>" +
         '<p class="muted">' + new Date(o.created_at).toLocaleString() + " · " + esc(o.delivery_slot || "") + "</p>" +
         o.order_items.map((i) =>
           "<div class='row' style='justify-content:space-between'><span>" + esc(i.medicines.name) +

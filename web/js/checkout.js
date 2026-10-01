@@ -1,4 +1,5 @@
-// Cart page + checkout (COD pilot). Rx items need an approved prescription on file.
+// Cart page + checkout (COD pilot). Rx items need a prescription on file;
+// the order waits in "awaiting_rx" until the pharmacist approves it.
 (function () {
   "use strict";
   const wrap = document.getElementById("wrap"), msg = document.getElementById("msg");
@@ -30,15 +31,20 @@
     const me = chk.profile;
 
     let addrs = [];
-    let rxStatusHtml = '';
+    let rxStatusHtml = '', rx = null, rxApproved = false;
     const hasRx = items.some(m => m.rx_required);
     try {
       const p = [DB.sb.from("addresses").select("*").eq("customer_id", me.id).order("created_at")];
-      if (hasRx) p.push(DB.sb.from("prescriptions").select("id").eq("customer_id", me.id).eq("status", "approved").limit(1));
+      if (hasRx) p.push(DB.sb.from("prescriptions").select("id,status").eq("customer_id", me.id)
+        .in("status", ["pending", "approved"]).order("created_at", { ascending: false }).limit(10));
       const results = await Promise.all(p);
       addrs = results[0].data || [];
       if (hasRx) {
-        if (results[1] && results[1].data.length) rxStatusHtml = '<div class="pill rx-ok">✓ Prescription attached</div>';
+        const rxs = (results[1] && results[1].data) || [];
+        rx = rxs.find(r => r.status === "approved") || rxs.find(r => r.status === "pending") || null;
+        rxApproved = !!(rx && rx.status === "approved");
+        if (rxApproved) rxStatusHtml = '<div class="pill rx-ok">✓ Prescription attached</div>';
+        else if (rx) rxStatusHtml = '<div class="pill rx-wait">Prescription under review — you can order now, it will be confirmed after the pharmacist approves it.</div>';
         else rxStatusHtml = '<div class="card err">Order contains Rx medicines. Prescription required to place order.</div>';
       }
     } catch (e) { return DB.showErr(msg, e.message); }
@@ -97,14 +103,16 @@
         return;
       }
       if (!addr) return DB.showErr(msg, "Please add a delivery address in Profile.");
-      if (hasRx && !rxStatusHtml.includes("rx-ok")) return DB.showErr(msg, "Prescription required. Please upload in Account.");
+      if (hasRx && !rx) return DB.showErr(msg, "Prescription required. Please upload in Account.");
       for (const m of items) {
         if (m.qty > m.stock) return DB.showErr(msg, esc(m.name) + " only has " + m.stock + " in stock. Adjust quantity.");
       }
       try {
         const { data: order, error } = await DB.sb.from("orders").insert({
           customer_id: me.id, address_id: addr.id,
-          status: "placed", subtotal: sub, delivery_fee: fee, total: tot,
+          prescription_id: hasRx && rx ? rx.id : null,
+          status: hasRx && rx && !rxApproved ? "awaiting_rx" : "placed",
+          subtotal: sub, delivery_fee: fee, total: tot,
           payment_method: "cod", delivery_slot: selSlot,
         }).select("id").single();
         if (error) throw error;
