@@ -392,7 +392,8 @@
           return "<tr><td><b>" + esc(m.name) + "</b>" + (m.strength ? " " + esc(m.strength) : "") +
             "<br><small class='muted'>" + esc([m.brand, m.form, m.pack_size].filter(Boolean).join(" • ")) + "</small></td>" +
             '<td><input class="mini-input" data-k="price" data-id="' + m.id + '" type="number" min="0" step="0.01" value="' + (m.price == null ? "" : m.price) + '"></td>' +
-            '<td><input class="mini-input" data-k="stock" data-id="' + m.id + '" type="number" min="0" step="1" value="' + m.stock + '"></td>' +
+            '<td><b>' + m.stock + '</b> <small class="muted">in stock</small><br>' +
+            '<input class="mini-input" data-k="stockadd" data-id="' + m.id + '" type="number" min="0" step="1" placeholder="+ Add" style="width:96px;margin-top:4px"></td>' +
             "<td>" + (m.rx_required ? ic("lock", 15) : "—") + "</td>" +
             '<td><input type="checkbox" data-act="med-live" data-id="' + m.id + '"' + (m.is_active ? " checked" : "") + "></td>" +
             '<td><button class="btn sm" data-act="med-save" data-id="' + m.id + '">Save</button></td></tr>';
@@ -615,9 +616,17 @@
       }
       else if (act === "med-save") {
         var v = rowVals(id);
-        var u = await DB.sb.from("medicines").update({ price: v.price, stock: v.stock == null ? 0 : v.stock }).eq("id", id);
+        var patch = { price: v.price };
+        if (v.stockadd) {
+          // Restock adds to current stock: 6 in stock + 4 added = 10.
+          var cur = await DB.sb.from("medicines").select("stock").eq("id", id).single();
+          if (cur.error) throw cur.error;
+          patch.stock = (cur.data.stock || 0) + v.stockadd;
+        }
+        var u = await DB.sb.from("medicines").update(patch).eq("id", id);
         if (u.error) throw u.error;
-        DB.toast("Saved");
+        DB.toast(v.stockadd ? "Restocked +" + v.stockadd : "Saved");
+        await loadMeds(); updateBadges();
       }
       else if (act === "med-add") {
         var nm = document.getElementById("mName").value.trim();
