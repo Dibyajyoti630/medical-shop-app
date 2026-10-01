@@ -361,6 +361,18 @@
       : '<div class="empty">No orders in this stage.</div>';
   }
 
+  // Re-sync a single order row from the server (no full-list rebuild needed).
+  async function refreshOrderRow(tr, id) {
+    if (!tr) { await show(cur, true); return; }
+    var r = await DB.sb.from("orders").select("id,customer_id,total,status,delivery_slot,prescription_id,created_at").eq("id", id).single();
+    if (r.error) throw r.error;
+    var x = await enrichOrders([r.data]);
+    var t = document.createElement("table"); t.innerHTML = "<tbody>" + orderRow(r.data, x) + "</tbody>";
+    var nr = t.querySelector("tr");
+    if (nr) tr.replaceWith(nr);
+    updateBadges();
+  }
+
   // ── Medicines ────────────────────────────────────────────────────────────
   async function vMedicines() {
     view.innerHTML = head("Medicines", "Price and stock edits go live on the customer app immediately.") +
@@ -581,22 +593,28 @@
       else if (act === "filter") { orderFilter = b.dataset.f; await vOrders(); }
       else if (act === "low-toggle") { medLowOnly = !medLowOnly; await vMedicines(); }
       else if (act === "adv") {
-        var to = b.dataset.to, row = b.closest("tr"), pill = row ? row.querySelector(".pill") : null;
+        var to = b.dataset.to, tr = b.closest("tr"), pill = tr ? tr.querySelector(".pill") : null;
         if (pill) { pill.className = "pill " + to; pill.textContent = LBL[to]; }
         b.disabled = true;
-        var r = await DB.sb.from("orders").update({ status: to }).eq("id", id);
-        DB.toast(r.error ? "Error: " + r.error.message : "Order → " + LBL[to]);
-        await show(cur, true);
+        try {
+          var r = await DB.sb.from("orders").update({ status: to }).eq("id", id);
+          if (r.error) throw r.error;
+          DB.toast("Order → " + LBL[to]);
+        } catch (err) { DB.toast("Error: " + err.message); }
+        await refreshOrderRow(tr, id);
       }
       else if (act === "cancel") {
         if (!confirm("Cancel this order?")) return;
-        var pill2 = b.closest("tr") ? b.closest("tr").querySelector(".pill") : null;
+        var tr2 = b.closest("tr"), pill2 = tr2 ? tr2.querySelector(".pill") : null;
         if (pill2) { pill2.className = "pill cancelled"; pill2.textContent = LBL.cancelled; }
         b.disabled = true;
-        await restoreStockForOrder(id);
-        var c = await DB.sb.from("orders").update({ status: "cancelled" }).eq("id", id);
-        DB.toast(c.error ? "Error: " + c.error.message : "Order cancelled — stock restored");
-        await show(cur, true);
+        try {
+          await restoreStockForOrder(id);
+          var c = await DB.sb.from("orders").update({ status: "cancelled" }).eq("id", id);
+          if (c.error) throw c.error;
+          DB.toast("Order cancelled — stock restored");
+        } catch (err) { DB.toast("Error: " + err.message); }
+        await refreshOrderRow(tr2, id);
       }
       else if (act === "items") { await editItems(id); }
       else if (act === "items-close") { document.getElementById("itemEditor").innerHTML = ""; }
