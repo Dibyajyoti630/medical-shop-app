@@ -81,6 +81,7 @@
     document.getElementById("adminAvatar").textContent = nm.trim().charAt(0).toUpperCase();
     if (!bound) { bindChrome(); bound = true; }
     updateBadges();
+    subscribeRealtime();
     await show("dashboard");
     setInterval(function () { if (cur === "dashboard") show("dashboard", true); }, 60000);
   }
@@ -148,6 +149,36 @@
     rxEl.hidden = rxN === 0; rxEl.textContent = rxN;
     var n = rxN + ordN + lowN, bell = document.getElementById("bellBadge");
     bell.hidden = n === 0; bell.textContent = n > 99 ? "99+" : n;
+  }
+
+  // ── Realtime: orders / prescriptions / stock changes arrive instantly ──
+  var rtOn = false;
+  function subscribeRealtime() {
+    if (rtOn) return; rtOn = true;
+    DB.sb.channel("admin-notifs")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "orders" }, function (p) {
+        DB.toast("New order " + shortId(p.new.id));
+        remoteChanged("orders");
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders" }, function () { remoteChanged("orders"); })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "prescriptions" }, function () {
+        DB.toast("New prescription uploaded");
+        remoteChanged("rx");
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "medicines" }, function () { remoteChanged("medicines"); })
+      .subscribe();
+  }
+  async function remoteChanged(kind) {
+    updateBadges();
+    try {
+      if (cur === "dashboard") await show("dashboard", true);
+      else if (cur === "orders" && kind === "orders") {
+        var ed = document.getElementById("itemEditor");
+        if (!ed || !ed.innerHTML.trim()) await loadOrders(); // don't wipe an open item editor
+      }
+      else if (cur === "rx" && kind === "rx") await vRx();
+      // medicines view: never auto-refresh (would wipe typed inputs); the badge is enough
+    } catch (e) { /* next refresh will catch up */ }
   }
 
   // ── Notification dropdown ──────────────────────────────────────────────
