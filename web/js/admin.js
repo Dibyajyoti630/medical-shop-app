@@ -11,7 +11,7 @@
   var esc = DB.esc;
   var view = document.getElementById("view");
   var foot = document.getElementById("foot");
-  var cur = "dashboard", bound = false, orderFilter = "all", medQ = "";
+  var cur = "dashboard", bound = false, orderFilter = "all", medQ = "", medLowOnly = false;
 
   function inr0(n) { return "₹" + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 }); }
   function shortId(id) { return "ORD-" + String(id).replace(/-/g, "").slice(0, 6).toUpperCase(); }
@@ -94,7 +94,8 @@
       await show("medicines");
       var s = document.getElementById("medSearch"); if (s) s.focus();
     };
-    document.getElementById("bellBtn").onclick = function () { show("rx"); };
+    document.getElementById("bellBtn").onclick = function () { show("dashboard"); };
+    document.getElementById("bellBtn").title = "Things needing attention";
     document.getElementById("supportLink").onclick = function (e) { e.preventDefault(); DB.toast("Call the shop owner — support number coming soon"); };
     view.addEventListener("click", onClick);
     view.addEventListener("change", onChange);
@@ -130,13 +131,19 @@
     if (name === "dashboard") foot.textContent = "Last updated: " + fmtDate(new Date()) + " • Auto-refresh every 60s";
   }
 
+  // Bell badge: red whenever anything needs attention —
+  // pending prescriptions, new/actionable orders, or low-stock medicines.
   async function updateBadges() {
-    var r = await DB.sb.from("prescriptions").select("id", { count: "exact", head: true }).eq("status", "pending");
-    var n = r.count || 0;
-    ["rxBadge", "bellBadge"].forEach(function (id) {
-      var el = document.getElementById(id);
-      el.hidden = n === 0; el.textContent = n;
-    });
+    var res = await Promise.all([
+      DB.sb.from("prescriptions").select("id", { count: "exact", head: true }).eq("status", "pending"),
+      DB.sb.from("orders").select("id", { count: "exact", head: true }).in("status", ["placed", "awaiting_rx"]),
+      DB.sb.from("medicines").select("id", { count: "exact", head: true }).eq("is_active", true).lte("stock", LOW_STOCK),
+    ]);
+    var rxN = res[0].count || 0, ordN = res[1].count || 0, lowN = res[2].count || 0;
+    var rxEl = document.getElementById("rxBadge");
+    rxEl.hidden = rxN === 0; rxEl.textContent = rxN;
+    var n = rxN + ordN + lowN, bell = document.getElementById("bellBadge");
+    bell.hidden = n === 0; bell.textContent = n > 99 ? "99+" : n;
   }
 
   // ── shared order fetch (orders + customer names + item lines) ────────────
@@ -181,6 +188,18 @@
   }
 
   // ── Order items editor (price up a prescription order after the customer call)
+  // Adjust one medicine's stock by delta (admin only; keeps inventory honest).
+  async function bumpStock(medId, delta) {
+    if (!medId || !delta) return;
+    var s = await DB.sb.from("medicines").select("stock").eq("id", medId).single();
+    if (s.error || !s.data) return;
+    await DB.sb.from("medicines").update({ stock: Math.max(0, s.data.stock + delta) }).eq("id", medId);
+  }
+  // Put back stock for every line of an order (cancel / Rx-strip).
+  async function restoreStockForOrder(orderId) {
+    var li = await DB.sb.from("order_items").select("qty,medicine_id").eq("order_id", orderId);
+    (li.data || []).forEach(function (l) { bumpStock(l.medicine_id, l.qty); });
+  }
   async function recalcOrder(orderId) {
     var li = await DB.sb.from("order_items").select("qty,unit_price").eq("order_id", orderId);
     if (li.error) throw li.error;
@@ -240,12 +259,12 @@
       { ico: "bag", cls: "teal", label: "Today's Orders", num: t.length, sub: pct(t.length, y.length), subCls: "up" },
       { ico: "cash", cls: "teal", label: "Revenue", num: inr0(rev(t)), sub: pct(rev(t), rev(y)), subCls: "up" },
       { ico: "rx", cls: "amber", label: "Pending Rx Verification", num: pendRx, sub: pendRx ? "Requires action" : "All clear", subCls: "warn" },
-      { ico: "alert", cls: "red", label: "Low Stock Alerts", num: low.length, sub: low.length ? "Restock recommended" : "Stock healthy", subCls: "bad", go: "medicines" },
+      { ico: "alert", cls: "red", label: "Low Stock Alerts", num: low.length, sub: low.length ? "Restock recommended" : "Stock healthy", subCls: "bad", go: "medicines", low: "1" },
     ];
     var html = head("Dashboard", "Overview of today's pharmacy operations and deliveries • Today, " +
       new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }));
     html += '<div class="stats">' + cards.map(function (c) {
-      var go = c.go ? ' data-act="nav" data-view="' + c.go + '" style="cursor:pointer"' : "";
+      var go = c.go ? ' data-act="nav" data-view="' + c.go + '"' + (c.low ? ' data-low="1"' : "") + ' style="cursor:pointer"' : "";
       return '<div class="stat"' + go + '><div class="stat-top"><span class="stat-ico ' + c.cls + '">' + ic(c.ico, 22) + "</span>" + esc(c.label) +
         '</div><div class="stat-num">' + c.num + '</div><div class="stat-sub ' + c.subCls + '">' + esc(c.sub) + "</div></div>";
     }).join("") + "</div>";
@@ -265,6 +284,7 @@
       }).join("") : '<div class="empty">Stock levels look good.</div>') +
       '<button class="btn-outline" data-act="nav" data-view="medicines">' + ic("plus", 16) + ' Manage Inventory</button></div></div>';
     view.innerHTML = html;
+    updateBadges();
   }
 
   // ── Orders ───────────────────────────────────────────────────────────────
@@ -302,6 +322,8 @@
       '<div class="row" style="margin-top:10px;align-items:center"><label style="display:flex;gap:6px;align-items:center;font-size:14px"><input type="checkbox" id="mRx"> Rx required</label>' +
       '<span style="flex:1"></span><button class="btn" data-act="med-add">Add medicine</button></div></div>' +
       '<input class="searchbar" id="medSearch" placeholder="Search medicines…" value="' + esc(medQ) + '">' +
+      '<div style="margin:10px 0"><button class="chip' + (medLowOnly ? " active" : "") + '" data-act="low-toggle">' +
+      (medLowOnly ? "Showing low stock only — tap to show all" : "Show low stock only") + "</button></div>" +
       '<div class="card"><div id="mlist"><div class="empty">Loading…</div></div></div>';
     await loadMeds();
   }
@@ -309,6 +331,7 @@
     var q = DB.sb.from("medicines").select("id,name,brand,strength,form,pack_size,price,stock,rx_required,is_active")
       .order("name").limit(200);
     if (medQ) q = q.ilike("name", "%" + medQ + "%");
+    if (medLowOnly) q = q.lte("stock", LOW_STOCK);
     var r = await q; if (r.error) throw r.error;
     var el = document.getElementById("mlist"); if (!el) return;
     el.innerHTML = (r.data && r.data.length)
@@ -501,8 +524,9 @@
     var b = e.target.closest("[data-act]"); if (!b) return;
     var act = b.dataset.act, id = b.dataset.id;
     try {
-      if (act === "nav") { medQ = b.dataset.q || ""; await show(b.dataset.view); }
+      if (act === "nav") { medQ = b.dataset.q || ""; medLowOnly = b.dataset.low === "1"; await show(b.dataset.view); }
       else if (act === "filter") { orderFilter = b.dataset.f; await vOrders(); }
+      else if (act === "low-toggle") { medLowOnly = !medLowOnly; await vMedicines(); }
       else if (act === "adv") {
         var r = await DB.sb.from("orders").update({ status: b.dataset.to }).eq("id", id);
         if (r.error) throw r.error;
@@ -510,15 +534,18 @@
       }
       else if (act === "cancel") {
         if (!confirm("Cancel this order?")) return;
+        await restoreStockForOrder(id);
         var c = await DB.sb.from("orders").update({ status: "cancelled" }).eq("id", id);
         if (c.error) throw c.error;
-        DB.toast("Order cancelled"); await show(cur, true);
+        DB.toast("Order cancelled — stock restored"); await show(cur, true);
       }
       else if (act === "items") { await editItems(id); }
       else if (act === "items-close") { document.getElementById("itemEditor").innerHTML = ""; }
       else if (act === "line-del") {
+        var ln = await DB.sb.from("order_items").select("qty,medicine_id").eq("id", id).single();
         var dd = await DB.sb.from("order_items").delete().eq("id", id);
         if (dd.error) throw dd.error;
+        if (ln.data) await bumpStock(ln.data.medicine_id, ln.data.qty);
         await recalcOrder(b.dataset.order);
         DB.toast("Item removed"); await editItems(b.dataset.order); await loadOrders();
       }
@@ -527,6 +554,7 @@
         if (mp.error) throw mp.error;
         var ni = await DB.sb.from("order_items").insert({ order_id: b.dataset.order, medicine_id: id, qty: 1, unit_price: mp.data.price });
         if (ni.error) throw ni.error;
+        await bumpStock(id, -1);
         await recalcOrder(b.dataset.order);
         DB.toast("Item added");
         var si = document.getElementById("itemSearch"); if (si) si.value = "";
@@ -575,7 +603,7 @@
           var touched = 0;
           for (var oi = 0; oi < (wo.data || []).length; oi++) {
             var o = wo.data[oi];
-            var li = await DB.sb.from("order_items").select("id,qty,unit_price,medicines(rx_required)").eq("order_id", o.id);
+            var li = await DB.sb.from("order_items").select("id,qty,unit_price,medicine_id,medicines(rx_required)").eq("order_id", o.id);
             if (li.error) throw li.error;
             var keep = [], drop = [];
             (li.data || []).forEach(function (l) {
@@ -584,6 +612,7 @@
             for (var di = 0; di < drop.length; di++) {
               var dr = await DB.sb.from("order_items").delete().eq("id", drop[di].id);
               if (dr.error) throw dr.error;
+              await bumpStock(drop[di].medicine_id, drop[di].qty);
             }
             if (drop.length) touched++;
             if (!keep.length) {
@@ -627,11 +656,18 @@
       var t = lq || lp, patch = {};
       if (lq) patch.qty = Math.max(1, Number(t.value) || 1);
       else patch.unit_price = Math.max(0, Number(t.value) || 0);
-      DB.sb.from("order_items").update(patch).eq("id", t.dataset.id).then(async function (r) {
+      var oldQ = lq ? Number(t.defaultValue) || 0 : 0, medOf = null;
+      (async function () {
+        if (lq) {
+          var cur = await DB.sb.from("order_items").select("qty,medicine_id").eq("id", t.dataset.id).single();
+          if (cur.data) { oldQ = cur.data.qty; medOf = cur.data.medicine_id; }
+        }
+        var r = await DB.sb.from("order_items").update(patch).eq("id", t.dataset.id);
         if (r.error) { DB.toast("Error: " + r.error.message); return; }
+        if (lq && medOf) await bumpStock(medOf, oldQ - patch.qty);
         try { await recalcOrder(t.dataset.order); await editItems(t.dataset.order); await loadOrders(); }
         catch (err) { DB.toast("Error: " + err.message); }
-      });
+      })();
       return;
     }
     if (e.target.id === "repDate") { repDate = e.target.value; loadReport(); }

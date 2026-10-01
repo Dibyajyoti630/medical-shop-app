@@ -108,8 +108,14 @@
         }
         if (!addr) return DB.showErr(msg, "Please add a delivery address in Profile.");
         if (hasRx && !rx) return DB.showErr(msg, "Prescription required. Please upload in Account.");
+        // Re-check live stock (page data may be stale if the shop just sold some).
+        const fresh = await DB.sb.from("medicines").select("id,name,stock").in("id", items.map(m => m.id));
+        if (fresh.error) throw fresh.error;
         for (const m of items) {
-          if (m.qty > m.stock) return DB.showErr(msg, esc(m.name) + " only has " + m.stock + " in stock. Adjust quantity.");
+          const f = (fresh.data || []).find(x => x.id === m.id);
+          const left = f ? f.stock : 0;
+          if (left <= 0) return DB.showErr(msg, esc(m.name) + " just went out of stock. Remove it to continue.");
+          if (m.qty > left) return DB.showErr(msg, "Only " + left + " left of " + esc(m.name) + ". Reduce quantity.");
         }
         const { data: order, error } = await DB.sb.from("orders").insert({
           customer_id: me.id, address_id: addr.id,
@@ -122,6 +128,12 @@
         const lines = items.map(m => ({ order_id: order.id, medicine_id: m.id, qty: m.qty, unit_price: m.price }));
         const { error: e2 } = await DB.sb.from("order_items").insert(lines);
         if (e2) throw e2;
+        // Reserve stock atomically; cancel the order if stock ran out in the meantime.
+        const { error: e3 } = await DB.sb.rpc("decrement_stock_for_order", { p_order_id: order.id });
+        if (e3) {
+          await DB.sb.from("orders").update({ status: "cancelled" }).eq("id", order.id);
+          throw e3;
+        }
         Cart.clear();
         location.href = "orders.html";
       } catch (e) { DB.showErr(msg, e.message); }

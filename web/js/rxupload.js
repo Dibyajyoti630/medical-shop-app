@@ -48,6 +48,13 @@
     } catch (e) { return DB.showErr(msg, e.message); }
 
     wrap.innerHTML =
+      '<div class="card">' +
+      '<h2 style="margin-bottom:12px">Upload New Prescription</h2>' +
+      '<label for="rxfile">Photo of prescription</label>' +
+      '<input type="file" id="rxfile" accept="image/*" aria-label="Upload prescription">' +
+      '<button class="btn" id="rxbtn" style="margin-top:12px">Upload</button>' +
+      '<p class="muted" style="margin-top:10px">The photo is compressed on your phone before uploading, so it works even on slow networks. The pharmacist verifies every prescription before Rx medicines can be ordered.</p>' +
+      '</div>' +
       '<div class="card"><h2 style="margin-bottom:8px">My Prescriptions</h2>' +
       (rxs.map(r =>
         '<div class="row" style="justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #edf1ef">' +
@@ -59,14 +66,7 @@
           : (orderedRx[r.id] ? '<span class="muted" style="font-size:13px">Ordered</span>' : '')) +
         '</div>'
       ).join("") || '<p class="muted">No prescriptions uploaded yet.</p>') +
-      '<p class="muted" style="margin-top:10px">Want medicines directly from a prescription? Upload it below, then tap <b>Order</b> — the pharmacist will call you to confirm the medicines and total.</p>' +
-      '</div>' +
-      '<div class="card">' +
-      '<h2 style="margin-bottom:12px">Upload New Prescription</h2>' +
-      '<label for="rxfile">Photo of prescription</label>' +
-      '<input type="file" id="rxfile" accept="image/*" aria-label="Upload prescription">' +
-      '<button class="btn" id="rxbtn" style="margin-top:12px">Upload</button>' +
-      '<p class="muted" style="margin-top:10px">The photo is compressed on your phone before uploading, so it works even on slow networks. The pharmacist verifies every prescription before Rx medicines can be ordered.</p>' +
+      '<p class="muted" style="margin-top:10px">Want medicines directly from a prescription? Upload it above, then tap <b>Order</b> — the pharmacist will call you to confirm the medicines and total.</p>' +
       '</div>';
 
     document.getElementById("rxbtn").onclick = async () => {
