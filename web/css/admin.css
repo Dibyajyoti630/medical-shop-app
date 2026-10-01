@@ -116,6 +116,19 @@ table.grid tr:last-child td { border-bottom: 0; }
 .empty { color: var(--muted); padding: 26px; text-align: center; }
 #amsg, .amsg { margin-bottom: 12px; }
 
+/* ── SVG icons (minimal, no emoji) ──────────────────────────────── */
+.ic { vertical-align: -3px; flex-shrink: 0; }
+#nav .ni { width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; }
+.icon-btn { color: var(--ink); display: inline-flex; align-items: center; }
+.logo .ic, .stat-ico .ic, .stock-ico .ic { vertical-align: 0; }
+.stock-ico { color: var(--red); }
+.btn .ic { margin-right: 6px; }
+.card-head h3 .ic { margin-right: 2px; }
+
+/* ── Reports ────────────────────────────────────────── */
+.rep-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rep-bar input[type="date"] { padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; font-size: 13.5px; color: var(--ink); }
+
 /* ── Mobile ─────────────────────────────────────────── */
 @media (max-width: 900px) {
   .admin-shell { flex-direction: column; }
@@ -124,7 +137,6 @@ table.grid tr:last-child td { border-bottom: 0; }
   .menu-title, .help-card { display: none; }
   #nav { flex-direction: row; overflow-x: auto; }
   #nav button { white-space: nowrap; font-size: 13.5px; padding: 9px 12px; }
-  #nav button .ni { display: none; }
   .admin-topbar { padding: 12px 14px; }
   .brand-text b { font-size: 15px; }
   .admin-meta { display: none; }

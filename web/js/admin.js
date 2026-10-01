@@ -34,8 +34,38 @@
   }
   function errBox(e) { return '<div class="card empty">Could not load: ' + esc(e.message) + "</div>"; }
 
+  // ── minimal SVG icons (no emoji) ─────────────────────────────────────────
+  var ICONS = {
+    dashboard: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/>',
+    orders: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6"/><path d="M9 16h4"/>',
+    pill: '<path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/>',
+    rx: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+    truck: '<rect x="1" y="4" width="14" height="12" rx="1"/><path d="M15 9h4l4 4v3h-8V9z"/><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="18.5" r="2"/>',
+    chart: '<path d="M3 3v18h18"/><path d="M8 17v-5"/><path d="M13 17V7"/><path d="M18 17v-8"/>',
+    settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+    search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+    bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
+    bag: '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>',
+    cash: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01"/><path d="M18 12h.01"/>',
+    alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
+    lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+    plus: '<path d="M12 5v14"/><path d="M5 12h14"/>',
+    chevron: '<path d="m6 9 6 6 6-6"/>',
+  };
+  function ic(n, s) {
+    s = s || 18;
+    return '<svg class="ic" width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[n] + "</svg>";
+  }
+  function paintIcons(root) {
+    (root || document).querySelectorAll("[data-ic]").forEach(function (el) {
+      if (!el.dataset.done) { el.innerHTML = ic(el.dataset.ic, el.dataset.sz || 18); el.dataset.done = "1"; }
+    });
+  }
+
   // ── boot ───────────────────────────────────────────────────────────────
   async function boot() {
+    paintIcons(document);
     var r = await Auth.requireRole("admin");
     if (r.reason === "signin") { Auth.gate(view, boot); return; }
     if (r.reason === "forbidden") { view.innerHTML = '<div class="card empty">This page is for shop admins only.</div>'; return; }
@@ -146,15 +176,15 @@
     };
     var x = await enrichOrders(recent);
     var cards = [
-      { ico: "🛍️", cls: "teal", label: "Today's Orders", num: t.length, sub: pct(t.length, y.length), subCls: "up" },
-      { ico: "💵", cls: "teal", label: "Revenue", num: inr0(rev(t)), sub: pct(rev(t), rev(y)), subCls: "up" },
-      { ico: "📄", cls: "amber", label: "Pending Rx Verification", num: pendRx, sub: pendRx ? "Requires action" : "All clear", subCls: "warn" },
-      { ico: "❗", cls: "red", label: "Low Stock Alerts", num: low.length, sub: low.length ? "Restock recommended" : "Stock healthy", subCls: "bad" },
+      { ico: "bag", cls: "teal", label: "Today's Orders", num: t.length, sub: pct(t.length, y.length), subCls: "up" },
+      { ico: "cash", cls: "teal", label: "Revenue", num: inr0(rev(t)), sub: pct(rev(t), rev(y)), subCls: "up" },
+      { ico: "rx", cls: "amber", label: "Pending Rx Verification", num: pendRx, sub: pendRx ? "Requires action" : "All clear", subCls: "warn" },
+      { ico: "alert", cls: "red", label: "Low Stock Alerts", num: low.length, sub: low.length ? "Restock recommended" : "Stock healthy", subCls: "bad" },
     ];
     var html = head("Dashboard", "Overview of today's pharmacy operations and deliveries • Today, " +
       new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }));
     html += '<div class="stats">' + cards.map(function (c) {
-      return '<div class="stat"><div class="stat-top"><span class="stat-ico ' + c.cls + '">' + c.ico + "</span>" + esc(c.label) +
+      return '<div class="stat"><div class="stat-top"><span class="stat-ico ' + c.cls + '">' + ic(c.ico, 22) + "</span>" + esc(c.label) +
         '</div><div class="stat-num">' + c.num + '</div><div class="stat-sub ' + c.subCls + '">' + esc(c.sub) + "</div></div>";
     }).join("") + "</div>";
     html += '<div class="cols"><div class="card"><div class="card-head"><h3>Recent Orders</h3>' +
@@ -165,13 +195,13 @@
           return "<tr><td class='oid'>" + shortId(o.id) + "</td><td>" + esc(c.name || "Customer") + "</td>" +
             "<td class='items-cell'>" + itemSummary(x.items[o.id]) + "</td><td><b>" + DB.money(o.total) + "</b></td><td>" + pill(o.status) + "</td></tr>";
         }).join("") + "</table>" : '<div class="empty">No orders yet.</div>') + "</div>";
-    html += '<div class="card"><div class="card-head"><h3>⚠️ Low Stock Alerts</h3></div>' +
+    html += '<div class="card"><div class="card-head"><h3>' + ic("alert", 20) + ' Low Stock Alerts</h3></div>' +
       (low.length ? low.slice(0, 5).map(function (m) {
-        return '<div class="stock-row"><span class="stock-ico">' + (m.stock <= 5 ? "❗" : "💊") + "</span><div><b>" +
+        return '<div class="stock-row"><span class="stock-ico">' + ic(m.stock <= 5 ? "alert" : "pill", 18) + "</span><div><b>" +
           esc(m.name) + (m.strength ? " " + esc(m.strength) : "") + "</b><small class='" + (m.stock <= 5 ? "" : "amber") + "'>" +
           m.stock + " left • Reorder at " + LOW_STOCK + "</small></div></div>";
       }).join("") : '<div class="empty">Stock levels look good.</div>') +
-      '<button class="btn-outline" data-act="nav" data-view="medicines">+ Manage Inventory</button></div></div>';
+      '<button class="btn-outline" data-act="nav" data-view="medicines">' + ic("plus", 16) + ' Manage Inventory</button></div></div>';
     view.innerHTML = html;
   }
 
@@ -209,7 +239,7 @@
       "</div>" +
       '<div class="row" style="margin-top:10px;align-items:center"><label style="display:flex;gap:6px;align-items:center;font-size:14px"><input type="checkbox" id="mRx"> Rx required</label>' +
       '<span style="flex:1"></span><button class="btn" data-act="med-add">Add medicine</button></div></div>' +
-      '<input class="searchbar" id="medSearch" placeholder="🔍 Search medicines…" value="' + esc(medQ) + '">' +
+      '<input class="searchbar" id="medSearch" placeholder="Search medicines…" value="' + esc(medQ) + '">' +
       '<div class="card"><div id="mlist"><div class="empty">Loading…</div></div></div>';
     await loadMeds();
   }
@@ -226,7 +256,7 @@
             "<br><small class='muted'>" + esc([m.brand, m.form, m.pack_size].filter(Boolean).join(" • ")) + "</small></td>" +
             '<td><input class="mini-input" data-k="price" data-id="' + m.id + '" type="number" min="0" step="0.01" value="' + (m.price == null ? "" : m.price) + '"></td>' +
             '<td><input class="mini-input" data-k="stock" data-id="' + m.id + '" type="number" min="0" step="1" value="' + m.stock + '"></td>' +
-            "<td>" + (m.rx_required ? "🔒" : "—") + "</td>" +
+            "<td>" + (m.rx_required ? ic("lock", 15) : "—") + "</td>" +
             '<td><input type="checkbox" data-act="med-live" data-id="' + m.id + '"' + (m.is_active ? " checked" : "") + "></td>" +
             '<td><button class="btn sm" data-act="med-save" data-id="' + m.id + '">Save</button></td></tr>';
         }).join("") + "</table>"
@@ -265,7 +295,7 @@
     };
     view.innerHTML = head("Prescriptions", "Approve a prescription before its medicines can be sold.") +
       '<div class="card"><div class="card-head"><h3>Pending verification (' + pend.length + ")</h3></div>" +
-      (pend.length ? pend.map(function (x) { return card(x, true); }).join("") : '<div class="empty">Nothing waiting. 🎉</div>') + "</div>" +
+      (pend.length ? pend.map(function (x) { return card(x, true); }).join("") : '<div class="empty">Nothing waiting.</div>') + "</div>" +
       '<div class="card" style="margin-top:18px"><div class="card-head"><h3>Reviewed</h3></div>' +
       (done.length ? done.map(function (x) { return card(x, false); }).join("") : '<div class="empty">No reviewed prescriptions yet.</div>') + "</div>";
   }
@@ -283,28 +313,105 @@
   }
 
   // ── Reports ──────────────────────────────────────────────────────────────
+  var repPeriod = "day", repDate = new Date().toISOString().slice(0, 10);
+  var repCache = { rows: [], label: "", rev: 0, n: 0 };
+  function repRange() {
+    var start, end, label;
+    var todayS = new Date().toISOString().slice(0, 10);
+    if (repPeriod === "day") {
+      start = repDate; end = repDate;
+      label = "Day: " + new Date(repDate + "T00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+    } else if (repPeriod === "week") {
+      var d = new Date(); d.setDate(d.getDate() - 6);
+      start = d.toISOString().slice(0, 10); end = todayS;
+      label = "Week: " + start + " to " + end;
+    } else {
+      start = todayS.slice(0, 7) + "-01"; end = todayS;
+      label = "Month: " + new Date(start + "T00:00").toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+    }
+    return { start: start, end: end, label: label };
+  }
   async function vReports() {
-    var o = await DB.sb.from("orders").select("id,total,status").neq("status", "cancelled").limit(2000);
-    if (o.error) throw o.error;
-    var rows = o.data || [];
-    var rev = rows.reduce(function (s, x) { return s + Number(x.total); }, 0);
-    var it = await DB.sb.from("order_items").select("qty,medicines(name)").limit(2000);
-    if (it.error) throw it.error;
-    var byMed = {};
-    (it.data || []).forEach(function (rr) {
-      var n = (rr.medicines && rr.medicines.name) || "?";
-      byMed[n] = (byMed[n] || 0) + rr.qty;
+    var todayS = new Date().toISOString().slice(0, 10);
+    view.innerHTML = head("Reports", "Day-wise sales. Download as Excel or PDF.") +
+      '<div class="card"><div class="rep-bar">' +
+      '<div class="chips" style="margin:0">' +
+      ["day", "week", "month"].map(function (p) {
+        return '<button class="chip' + (p === repPeriod ? " active" : "") + '" data-act="rep-p" data-p="' + p + '">' +
+          p.charAt(0).toUpperCase() + p.slice(1) + "</button>";
+      }).join("") + "</div>" +
+      '<input type="date" id="repDate" value="' + repDate + '" max="' + todayS + '"' + (repPeriod === "day" ? "" : ' style="display:none"') + ">" +
+      '<span style="flex:1"></span>' +
+      '<button class="btn" data-act="rep-xls">' + ic("download", 15) + ' Excel</button>' +
+      '<button class="btn ghost" data-act="rep-pdf">' + ic("download", 15) + " PDF</button>" +
+      '</div><div id="repBody" style="margin-top:18px"><div class="empty">Loading…</div></div></div>';
+    await loadReport();
+  }
+  async function loadReport() {
+    var rg = repRange();
+    var r = await DB.sb.from("orders").select("id,total,created_at")
+      .neq("status", "cancelled")
+      .gte("created_at", rg.start + "T00:00:00").lte("created_at", rg.end + "T23:59:59")
+      .order("created_at", { ascending: false }).limit(5000);
+    if (r.error) throw r.error;
+    var byDay = {};
+    (r.data || []).forEach(function (o) {
+      var d = o.created_at.slice(0, 10);
+      byDay[d] = byDay[d] || { n: 0, rev: 0 };
+      byDay[d].n++; byDay[d].rev += Number(o.total);
     });
-    var top = Object.keys(byMed).sort(function (a, b) { return byMed[b] - byMed[a]; }).slice(0, 5);
-    view.innerHTML = head("Reports", "All-time, excluding cancelled orders.") +
+    var rows = Object.keys(byDay).sort().reverse().map(function (d) {
+      return { date: d, n: byDay[d].n, rev: byDay[d].rev };
+    });
+    var rev = rows.reduce(function (s, x) { return s + x.rev; }, 0);
+    var n = rows.reduce(function (s, x) { return s + x.n; }, 0);
+    repCache = { rows: rows, label: rg.label, rev: rev, n: n };
+    var el = document.getElementById("repBody"); if (!el) return;
+    el.innerHTML =
       '<div class="stats" style="grid-template-columns:repeat(3,1fr)">' +
-      '<div class="stat"><div class="stat-top"><span class="stat-ico teal">💵</span>Total revenue</div><div class="stat-num">' + inr0(rev) + "</div></div>" +
-      '<div class="stat"><div class="stat-top"><span class="stat-ico teal">🛍️</span>Total orders</div><div class="stat-num">' + rows.length + "</div></div>" +
-      '<div class="stat"><div class="stat-top"><span class="stat-ico amber">📊</span>Avg order value</div><div class="stat-num">' + inr0(rows.length ? rev / rows.length : 0) + "</div></div></div>" +
-      '<div class="card"><div class="card-head"><h3>Top medicines by quantity</h3></div>' +
-      (top.length ? '<table class="grid"><tr><th>Medicine</th><th>Qty sold</th></tr>' +
-        top.map(function (n) { return "<tr><td>" + esc(n) + "</td><td><b>" + byMed[n] + "</b></td></tr>"; }).join("") + "</table>"
-        : '<div class="empty">No sales yet.</div>') + "</div>";
+      '<div class="stat"><div class="stat-top"><span class="stat-ico teal">' + ic("cash", 22) + "</span>Revenue</div>" +
+      '<div class="stat-num">' + inr0(rev) + "</div><div class='stat-sub up'>" + esc(rg.label) + "</div></div>" +
+      '<div class="stat"><div class="stat-top"><span class="stat-ico teal">' + ic("bag", 22) + "</span>Orders</div>" +
+      '<div class="stat-num">' + n + "</div></div>" +
+      '<div class="stat"><div class="stat-top"><span class="stat-ico amber">' + ic("chart", 22) + "</span>Avg order value</div>" +
+      '<div class="stat-num">' + inr0(n ? rev / n : 0) + "</div></div></div>" +
+      (rows.length ? '<table class="grid"><tr><th>Date</th><th>Orders</th><th>Revenue</th></tr>' +
+        rows.map(function (x) {
+          return "<tr><td><b>" + new Date(x.date + "T00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) +
+            "</b></td><td>" + x.n + "</td><td><b>" + inr0(x.rev) + "</b></td></tr>";
+        }).join("") + "</table>" : '<div class="empty">No sales in this period.</div>');
+  }
+  function downloadCSV() {
+    if (!repCache.rows.length) { DB.toast("Nothing to download"); return; }
+    var csv = "Date,Orders,Revenue (INR)\n" + repCache.rows.map(function (x) {
+      return x.date + "," + x.n + "," + Math.round(x.rev);
+    }).join("\n");
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = "jj-sales-report-" + repPeriod + ".csv";
+    document.body.appendChild(a); a.click(); a.remove();
+    DB.toast("Excel file downloaded");
+  }
+  function downloadPDF() {
+    if (!repCache.rows.length) { DB.toast("Nothing to download"); return; }
+    var rowsHtml = repCache.rows.map(function (x) {
+      return "<tr><td>" + x.date + "</td><td>" + x.n + "</td><td>" + inr0(x.rev) + "</td></tr>";
+    }).join("");
+    var w = window.open("", "_blank");
+    w.document.write("<!DOCTYPE html><html><head><title>Sales report</title><style>" +
+      "body{font-family:Arial,sans-serif;padding:36px;color:#222;max-width:800px;margin:auto}" +
+      "h1{font-size:22px;margin:0}h1 small{display:block;font-size:13px;color:#666;margin-top:4px}" +
+      ".sum{display:flex;gap:16px;margin:20px 0}.sum div{background:#f4f6f8;padding:12px 20px;border-radius:8px;flex:1}" +
+      ".sum b{font-size:20px;display:block}.sum span{font-size:12px;color:#666}" +
+      "table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:8px 10px;text-align:left;font-size:13px}" +
+      "th{background:#f0f2f5}</style></head><body>" +
+      "<h1>Jiban Jyoti Medical Store<small>Sales report — " + esc(repCache.label) + "</small></h1>" +
+      '<div class="sum"><div><b>' + inr0(repCache.rev) + "</b><span>Revenue</span></div><div><b>" + repCache.n +
+      "</b><span>Orders</span></div><div><b>" + inr0(repCache.n ? repCache.rev / repCache.n : 0) + "</b><span>Avg order</span></div></div>" +
+      "<table><tr><th>Date</th><th>Orders</th><th>Revenue</th></tr>" + rowsHtml + "</table>" +
+      "<p style='color:#888;font-size:12px;margin-top:16px'>Generated " + fmtDate(new Date()) + " • Excludes cancelled orders</p>" +
+      "<scr" + "ipt>window.onload=function(){window.print()};</scr" + "ipt></body></html>");
+    w.document.close();
   }
 
   // ── Settings ─────────────────────────────────────────────────────────────
@@ -374,14 +481,21 @@
         DB.toast("Prescription " + stt); updateBadges(); await show("rx", true);
       }
       else if (act === "rx-view") { window.open(b.dataset.url, "_blank"); }
+      else if (act === "rep-p") { repPeriod = b.dataset.p; await show("reports", true); }
+      else if (act === "rep-xls") { downloadCSV(); }
+      else if (act === "rep-pdf") { downloadPDF(); }
       else if (act === "signout") { await Auth.signOut(); location.reload(); }
     } catch (err) { DB.toast("Error: " + err.message); }
   }
   function onChange(e) {
-    var b = e.target.closest("[data-act='med-live']"); if (!b) return;
-    DB.sb.from("medicines").update({ is_active: b.checked }).eq("id", b.dataset.id).then(function (r) {
-      DB.toast(r.error ? "Error: " + r.error.message : (b.checked ? "Live on store" : "Hidden from store"));
-    });
+    var b = e.target.closest("[data-act='med-live']");
+    if (b) {
+      DB.sb.from("medicines").update({ is_active: b.checked }).eq("id", b.dataset.id).then(function (r) {
+        DB.toast(r.error ? "Error: " + r.error.message : (b.checked ? "Live on store" : "Hidden from store"));
+      });
+      return;
+    }
+    if (e.target.id === "repDate") { repDate = e.target.value; loadReport(); }
   }
 
   boot();

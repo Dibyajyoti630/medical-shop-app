@@ -13,13 +13,13 @@
     <div class="menu-card">
       <div class="menu-title">MENU</div>
       <nav id="nav">
-        <button data-view="dashboard" class="active"><span class="ni">📊</span>Dashboard</button>
-        <button data-view="orders"><span class="ni">📋</span>Orders</button>
-        <button data-view="medicines"><span class="ni">💊</span>Medicines</button>
-        <button data-view="rx"><span class="ni">🧾</span>Prescriptions<span class="badge" id="rxBadge" hidden></span></button>
-        <button data-view="staff"><span class="ni">🛵</span>Delivery Staff</button>
-        <button data-view="reports"><span class="ni">📈</span>Reports</button>
-        <button data-view="settings"><span class="ni">⚙️</span>Settings</button>
+        <button data-view="dashboard" class="active"><span class="ni" data-ic="dashboard"></span>Dashboard</button>
+        <button data-view="orders"><span class="ni" data-ic="orders"></span>Orders</button>
+        <button data-view="medicines"><span class="ni" data-ic="pill"></span>Medicines</button>
+        <button data-view="rx"><span class="ni" data-ic="rx"></span>Prescriptions<span class="badge" id="rxBadge" hidden></span></button>
+        <button data-view="staff"><span class="ni" data-ic="truck"></span>Delivery Staff</button>
+        <button data-view="reports"><span class="ni" data-ic="chart"></span>Reports</button>
+        <button data-view="settings"><span class="ni" data-ic="settings"></span>Settings</button>
       </nav>
       <div class="help-card">
         <div>Need Help?</div>
@@ -30,16 +30,16 @@
   <div class="main">
     <header class="admin-topbar">
       <div class="brand">
-        <span class="logo">✚</span>
+        <span class="logo" data-ic="plus" data-sz="26"></span>
         <div class="brand-text"><b>Jiban Jyoti Medical Store</b><small>Admin Panel</small></div>
       </div>
       <div class="top-actions">
-        <button class="icon-btn" id="searchBtn" title="Search medicines">🔍</button>
-        <button class="icon-btn" id="bellBtn" title="Pending prescriptions">🔔<span class="badge" id="bellBadge" hidden></span></button>
+        <button class="icon-btn" id="searchBtn" title="Search medicines"><span data-ic="search" data-sz="22"></span></button>
+        <button class="icon-btn" id="bellBtn" title="Pending prescriptions"><span data-ic="bell" data-sz="22"></span><span class="badge" id="bellBadge" hidden></span></button>
         <div class="admin-user">
           <span class="avatar" id="adminAvatar">A</span>
           <div class="admin-meta"><b id="adminName">Admin</b><small>Admin</small></div>
-          <span class="chev">▾</span>
+          <span class="chev" data-ic="chevron" data-sz="16"></span>
         </div>
       </div>
     </header>
