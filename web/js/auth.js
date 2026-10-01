@@ -43,8 +43,7 @@
       '<div class="row" style="margin-top:14px">' +
       '<button class="btn" id="ago">Sign in</button>' +
       '<button class="btn secondary" id="areg">Create account</button></div>' +
-      '<p class="muted" style="margin-top:10px">First admin: create an account, then run ' +
-      "<code>update profiles set role='admin' where id='&lt;your-uuid&gt;';</code> in Supabase SQL.</p></div>";
+      '</div>';
     const go = async (fn) => {
       const box = document.getElementById("amsg");
       try {

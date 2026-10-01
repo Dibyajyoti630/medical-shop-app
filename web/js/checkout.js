@@ -58,7 +58,7 @@
       '</div>' +
       '<h2 style="font-size:16px;margin:16px 4px 8px">Order Summary</h2>' +
       items.map(m =>
-        '<div class="card row" style="align-items:flex-start"><div class="circle-icon">💊</div><div style="flex:1"><b>' + esc(m.name) + '</b><div class="muted">' + esc(m.strength) + ' • ' + esc(m.pack) + '</div></div>' +
+        '<div class="card row" style="align-items:flex-start"><div class="circle-icon">💊</div><div style="flex:1"><b>' + esc(m.name) + '</b><div class="muted">' + esc(m.strength) + (m.pack_size ? ' • ' + esc(m.pack_size) : '') + '</div></div>' +
         '<div style="text-align:right"><div class="stepper" style="justify-content:flex-end"><button data-a="-1" data-id="' + m.id + '">−</button><b class="sqty">' + m.qty + '</b><button data-a="1" data-id="' + m.id + '">+</button></div><b style="display:block;margin-top:8px">' + DB.money(m.price * m.qty) + '</b></div></div>'
       ).join('') +
       '<div class="card">' +
