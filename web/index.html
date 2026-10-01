@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Medical Shop — Order Medicines</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<header class="topbar"><h1>💊 Medical Shop</h1><div class="spacer"></div><span id="cartCount"></span></header>
+<main>
+  <div class="searchbar"><input id="q" type="search" placeholder="Search medicines…" aria-label="Search medicines"></div>
+  <div class="chips" id="cats"></div>
+  <div id="list"></div>
+  <div class="row" style="justify-content:center"><button class="btn secondary small" id="more">Load more</button></div>
+  <div id="msg"></div>
+</main>
+<nav class="bottomnav">
+  <a href="index.html" class="active"><span class="ico">🏠</span>Home</a>
+  <a href="cart.html"><span class="ico">🛒</span>Cart</a>
+  <a href="orders.html"><span class="ico">📦</span>Orders</a>
+  <a href="account.html"><span class="ico">👤</span>Account</a>
+</nav>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js"></script>
+<script src="js/db.js"></script>
+<script src="js/customer.js"></script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Admin — Medical Shop</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<header class="topbar"><h1>⚙️ Admin</h1></header>
+<main>
+  <div class="chips" id="tabs">
+    <button class="chip active" data-tab="orders">Orders</button>
+    <button class="chip" data-tab="catalog">Catalog</button>
+    <button class="chip" data-tab="rx">Prescriptions</button>
+    <button class="chip" data-tab="riders">Riders</button>
+  </div>
+  <div id="msg"></div>
+  <div id="panel"></div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js"></script>
+<script src="js/db.js"></script>
+<script src="js/admin.js"></script>
+</body>
+</html>
