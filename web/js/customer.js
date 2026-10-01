@@ -11,12 +11,7 @@
   const FORM_ICON = { Tablet: "💊", Capsule: "💊", Syrup: "🧴", Injection: "💉", Drops: "💧", Ointment: "🩹", Cream: "🧴", Gel: "🩹", Inhaler: "🌬️", Sachet: "✉️", Powder: "🤍", Spray: "💨", Lotion: "🧴", Solution: "🧪" };
   const plural = (f) => f === "Drops" ? "Drops" : f + "s";
 
-  function toast(t) {
-    const d = document.createElement("div");
-    d.className = "toast"; d.textContent = t;
-    document.body.appendChild(d);
-    setTimeout(() => d.remove(), 1800);
-  }
+  const toast = DB.toast;
   function price(n) {
     const p = Number(n || 0);
     return "₹" + (Number.isInteger(p) ? p : p.toFixed(2));

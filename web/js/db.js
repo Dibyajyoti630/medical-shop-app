@@ -51,5 +51,12 @@
     box.innerHTML = '<div class="err">' + esc(msg) + "</div>";
   }
 
-  window.DB = { sb, PAGE, medicines, categories, forms, medImage, money, esc, showErr };
+  function toast(t) {
+    const d = document.createElement("div");
+    d.className = "toast"; d.textContent = t;
+    document.body.appendChild(d);
+    setTimeout(() => d.remove(), 1800);
+  }
+
+  window.DB = { sb, PAGE, medicines, categories, forms, medImage, money, esc, showErr, toast };
 })();

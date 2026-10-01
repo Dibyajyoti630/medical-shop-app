@@ -86,7 +86,7 @@
       selSlot = c.innerText.replace('🕒 ', '');
     });
 
-    document.getElementById("pay-upi").onclick = () => DB.showErr(msg, "UPI payments coming soon");
+    document.getElementById("pay-upi").onclick = () => DB.toast("UPI payments coming soon");
 
     document.getElementById("place").onclick = async () => {
       if (!addr) return DB.showErr(msg, "Please add a delivery address in Profile.");
