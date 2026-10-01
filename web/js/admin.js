@@ -131,7 +131,7 @@
     if (!silent) view.innerHTML = '<div class="card empty">Loading…</div>';
     foot.textContent = "";
     try { await VIEWS[name](); }
-    catch (e) { if (!silent) view.innerHTML = errBox(e); }
+    catch (e) { if (!silent) view.innerHTML = errBox(e); else DB.toast("Error: " + (e.message || e)); }
     if (name === "dashboard") foot.textContent = "Last updated: " + fmtDate(new Date()) + " • Auto-refresh every 60s";
   }
 
@@ -581,16 +581,22 @@
       else if (act === "filter") { orderFilter = b.dataset.f; await vOrders(); }
       else if (act === "low-toggle") { medLowOnly = !medLowOnly; await vMedicines(); }
       else if (act === "adv") {
-        var r = await DB.sb.from("orders").update({ status: b.dataset.to }).eq("id", id);
-        if (r.error) throw r.error;
-        DB.toast("Order → " + LBL[b.dataset.to]); await show(cur, true);
+        var to = b.dataset.to, row = b.closest("tr"), pill = row ? row.querySelector(".pill") : null;
+        if (pill) { pill.className = "pill " + to; pill.textContent = LBL[to]; }
+        b.disabled = true;
+        var r = await DB.sb.from("orders").update({ status: to }).eq("id", id);
+        DB.toast(r.error ? "Error: " + r.error.message : "Order → " + LBL[to]);
+        await show(cur, true);
       }
       else if (act === "cancel") {
         if (!confirm("Cancel this order?")) return;
+        var pill2 = b.closest("tr") ? b.closest("tr").querySelector(".pill") : null;
+        if (pill2) { pill2.className = "pill cancelled"; pill2.textContent = LBL.cancelled; }
+        b.disabled = true;
         await restoreStockForOrder(id);
         var c = await DB.sb.from("orders").update({ status: "cancelled" }).eq("id", id);
-        if (c.error) throw c.error;
-        DB.toast("Order cancelled — stock restored"); await show(cur, true);
+        DB.toast(c.error ? "Error: " + c.error.message : "Order cancelled — stock restored");
+        await show(cur, true);
       }
       else if (act === "items") { await editItems(id); }
       else if (act === "items-close") { document.getElementById("itemEditor").innerHTML = ""; }
