@@ -44,11 +44,16 @@
     wrap.innerHTML =
       '<div class="card"><h2 style="margin-bottom:8px">My Prescriptions</h2>' +
       (rxs.map(r =>
-        '<div class="row" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid #edf1ef">' +
+        '<div class="row" style="justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #edf1ef">' +
         '<div><b>Prescription</b><br><span class="muted">' +
-        new Date(r.created_at).toLocaleString() + '</span></div>' +
-        '<span class="status ' + r.status + '">' + esc(r.status) + '</span></div>'
+        new Date(r.created_at).toLocaleString() + '</span><br>' +
+        '<span class="status ' + r.status + '">' + esc(r.status) + '</span></div>' +
+        ((r.status === "pending" || r.status === "approved")
+          ? '<button class="btn secondary small" data-rxorder="' + r.id + '" data-st="' + r.status + '">Order</button>'
+          : '') +
+        '</div>'
       ).join("") || '<p class="muted">No prescriptions uploaded yet.</p>') +
+      '<p class="muted" style="margin-top:10px">Want medicines directly from a prescription? Upload it below, then tap <b>Order</b> — the pharmacist will call you to confirm the medicines and total.</p>' +
       '</div>' +
       '<div class="card">' +
       '<h2 style="margin-bottom:12px">Upload New Prescription</h2>' +
@@ -81,6 +86,30 @@
         btn.disabled = false;
         btn.textContent = "Upload";
       }
+    };
+
+    // Order-by-prescription: one tap on a prescription creates an order for the
+    // pharmacist to fulfil (medicines confirmed over a call).
+    wrap.onclick = async (e) => {
+      const b = e.target.closest("[data-rxorder]");
+      if (!b) return;
+      if (!confirm("Place an order with this prescription? The pharmacist will call you to confirm the medicines and total.")) return;
+      b.disabled = true;
+      try {
+        const { data: addrs, error: aErr } = await DB.sb.from("addresses").select("id")
+          .eq("customer_id", me.id).order("created_at").limit(1);
+        if (aErr) throw aErr;
+        if (!addrs.length) throw new Error("Add a delivery address in Profile first.");
+        const { error } = await DB.sb.from("orders").insert({
+          customer_id: me.id, address_id: addrs[0].id, prescription_id: b.dataset.rxorder,
+          status: b.dataset.st === "approved" ? "placed" : "awaiting_rx",
+          subtotal: 0, delivery_fee: 0, total: 0, payment_method: "cod",
+          notes: "Order by prescription — pharmacist to call and confirm medicines.",
+        });
+        if (error) throw error;
+        DB.toast("Order placed — pharmacist will call you");
+        location.href = "orders.html";
+      } catch (err) { DB.showErr(msg, err.message); b.disabled = false; }
     };
   }
 

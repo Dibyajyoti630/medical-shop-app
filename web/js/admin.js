@@ -144,12 +144,16 @@
     var adv = NEXT[o.status] ? '<button class="btn sm" data-act="adv" data-id="' + o.id + '" data-to="' + NEXT[o.status] + '">→ ' + esc(LBL[NEXT[o.status]]) + "</button>" : "";
     var cancel = (o.status !== "delivered" && o.status !== "cancelled")
       ? '<button class="btn sm danger" data-act="cancel" data-id="' + o.id + '">Cancel</button>' : "";
+    var rxBtn = o.prescription_id
+      ? '<button class="btn sm" data-act="rximg" data-id="' + o.prescription_id + '">View Rx</button>' : "";
+    var itemsCell = (x.items[o.id] && x.items[o.id].length) ? itemSummary(x.items[o.id])
+      : (o.prescription_id ? "<b>Prescription order</b>" : "—");
     return "<tr><td class='oid'>" + shortId(o.id) + "<br><small class='muted'>" + ago(o.created_at) + "</small></td>" +
       "<td><b>" + esc(c.name || "Customer") + "</b>" + (c.phone ? "<br><small class='muted'>" + esc(c.phone) + "</small>" : "") + "</td>" +
-      "<td class='items-cell'>" + itemSummary(x.items[o.id]) + "</td>" +
+      "<td class='items-cell'>" + itemsCell + "</td>" +
       "<td><b>" + DB.money(o.total) + "</b></td>" +
       "<td>" + pill(o.status) + "</td>" +
-      '<td><div class="row-actions">' + adv + cancel + "</div></td></tr>";
+      '<td><div class="row-actions">' + adv + rxBtn + cancel + "</div></td></tr>";
   }
 
   // ── Dashboard ────────────────────────────────────────────────────────────
@@ -216,7 +220,7 @@
     await loadOrders();
   }
   async function loadOrders() {
-    var q = DB.sb.from("orders").select("id,customer_id,total,status,delivery_slot,created_at")
+    var q = DB.sb.from("orders").select("id,customer_id,total,status,delivery_slot,prescription_id,created_at")
       .order("created_at", { ascending: false }).limit(100);
     if (orderFilter !== "all") q = q.eq("status", orderFilter);
     var r = await q; if (r.error) throw r.error;
@@ -488,6 +492,13 @@
         DB.toast("Prescription " + stt); updateBadges(); await show("rx", true);
       }
       else if (act === "rx-view") { window.open(b.dataset.url, "_blank"); }
+      else if (act === "rximg") {
+        var pr = await DB.sb.from("prescriptions").select("image_url").eq("id", b.dataset.id).single();
+        if (pr.error) throw pr.error;
+        var sg = await DB.sb.storage.from("prescriptions").createSignedUrl(pr.data.image_url, 600);
+        if (sg.error) throw sg.error;
+        window.open(sg.data.signedUrl, "_blank");
+      }
       else if (act === "rep-p") { repPeriod = b.dataset.p; await show("reports", true); }
       else if (act === "rep-xls") { downloadCSV(); }
       else if (act === "rep-pdf") { downloadPDF(); }
