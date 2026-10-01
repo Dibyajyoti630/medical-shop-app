@@ -240,12 +240,13 @@
       { ico: "bag", cls: "teal", label: "Today's Orders", num: t.length, sub: pct(t.length, y.length), subCls: "up" },
       { ico: "cash", cls: "teal", label: "Revenue", num: inr0(rev(t)), sub: pct(rev(t), rev(y)), subCls: "up" },
       { ico: "rx", cls: "amber", label: "Pending Rx Verification", num: pendRx, sub: pendRx ? "Requires action" : "All clear", subCls: "warn" },
-      { ico: "alert", cls: "red", label: "Low Stock Alerts", num: low.length, sub: low.length ? "Restock recommended" : "Stock healthy", subCls: "bad" },
+      { ico: "alert", cls: "red", label: "Low Stock Alerts", num: low.length, sub: low.length ? "Restock recommended" : "Stock healthy", subCls: "bad", go: "medicines" },
     ];
     var html = head("Dashboard", "Overview of today's pharmacy operations and deliveries • Today, " +
       new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }));
     html += '<div class="stats">' + cards.map(function (c) {
-      return '<div class="stat"><div class="stat-top"><span class="stat-ico ' + c.cls + '">' + ic(c.ico, 22) + "</span>" + esc(c.label) +
+      var go = c.go ? ' data-act="nav" data-view="' + c.go + '" style="cursor:pointer"' : "";
+      return '<div class="stat"' + go + '><div class="stat-top"><span class="stat-ico ' + c.cls + '">' + ic(c.ico, 22) + "</span>" + esc(c.label) +
         '</div><div class="stat-num">' + c.num + '</div><div class="stat-sub ' + c.subCls + '">' + esc(c.sub) + "</div></div>";
     }).join("") + "</div>";
     html += '<div class="cols"><div class="card"><div class="card-head"><h3>Recent Orders</h3>' +
@@ -258,7 +259,7 @@
         }).join("") + "</table>" : '<div class="empty">No orders yet.</div>') + "</div>";
     html += '<div class="card"><div class="card-head"><h3>' + ic("alert", 20) + ' Low Stock Alerts</h3></div>' +
       (low.length ? low.slice(0, 5).map(function (m) {
-        return '<div class="stock-row"><span class="stock-ico">' + ic(m.stock <= 5 ? "alert" : "pill", 18) + "</span><div><b>" +
+        return '<div class="stock-row" data-act="nav" data-view="medicines" data-q="' + esc(m.name) + '" style="cursor:pointer" title="Restock this medicine"><span class="stock-ico">' + ic(m.stock <= 5 ? "alert" : "pill", 18) + "</span><div><b>" +
           esc(m.name) + (m.strength ? " " + esc(m.strength) : "") + "</b><small class='" + (m.stock <= 5 ? "" : "amber") + "'>" +
           m.stock + " left • Reorder at " + LOW_STOCK + "</small></div></div>";
       }).join("") : '<div class="empty">Stock levels look good.</div>') +
@@ -500,7 +501,7 @@
     var b = e.target.closest("[data-act]"); if (!b) return;
     var act = b.dataset.act, id = b.dataset.id;
     try {
-      if (act === "nav") { await show(b.dataset.view); }
+      if (act === "nav") { medQ = b.dataset.q || ""; await show(b.dataset.view); }
       else if (act === "filter") { orderFilter = b.dataset.f; await vOrders(); }
       else if (act === "adv") {
         var r = await DB.sb.from("orders").update({ status: b.dataset.to }).eq("id", id);
