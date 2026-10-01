@@ -1,322 +1,388 @@
-// Admin panel — Phase A: catalog (list, inline price/stock edit, CSV import).
-// Order / prescription / rider tabs land in later phases.
+// Admin dashboard — Jiban Jyoti Medical Store. Requires admin role (Auth.requireRole).
 (function () {
   "use strict";
-  const panel = document.getElementById("panel");
-  const msg = document.getElementById("msg");
-  const tabs = document.getElementById("tabs");
-  const esc = DB.esc;
-  let tab = "catalog"; // default to the working tab
-  let q = "", page = 0, total = 0;
-  const PAGE = DB.PAGE;
+  var LOW_STOCK = 10;
+  var NEXT = { placed: "confirmed", awaiting_rx: "confirmed", confirmed: "preparing",
+    preparing: "out_for_delivery", assigned: "picked_up", picked_up: "out_for_delivery",
+    out_for_delivery: "delivered" };
+  var LBL = { placed: "Placed", awaiting_rx: "Awaiting Rx", confirmed: "Confirmed",
+    preparing: "Preparing", assigned: "Assigned", picked_up: "Picked up",
+    out_for_delivery: "Out for Delivery", delivered: "Delivered", cancelled: "Cancelled" };
+  var esc = DB.esc;
+  var view = document.getElementById("view");
+  var foot = document.getElementById("foot");
+  var cur = "dashboard", bound = false, orderFilter = "all", medQ = "";
 
-  tabs.addEventListener("click", (e) => {
-    const b = e.target.closest("[data-tab]");
-    if (!b) return;
-    tabs.querySelectorAll(".chip").forEach((c) => c.classList.remove("active"));
-    b.classList.add("active");
-    tab = b.dataset.tab;
-    render();
-  });
+  function inr0(n) { return "₹" + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 }); }
+  function shortId(id) { return "ORD-" + String(id).replace(/-/g, "").slice(0, 6).toUpperCase(); }
+  function pill(s) { return '<span class="pill ' + s + '">' + esc(LBL[s] || s) + "</span>"; }
+  function fmtDate(d) {
+    d = new Date(d);
+    var date = d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+    var h = d.getHours(), ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12;
+    return date + ", " + h + ":" + String(d.getMinutes()).padStart(2, "0") + " " + ap;
+  }
+  function ago(d) {
+    var m = Math.floor((Date.now() - new Date(d)) / 60000);
+    if (m < 1) return "just now";
+    if (m < 60) return m + "m ago";
+    var h = Math.floor(m / 60);
+    return h < 24 ? h + "h ago" : Math.floor(h / 24) + "d ago";
+  }
+  function head(title, sub) {
+    return '<div class="page-head"><h2>' + esc(title) + "</h2><p>" + sub + "</p></div>";
+  }
+  function errBox(e) { return '<div class="card empty">Could not load: ' + esc(e.message) + "</div>"; }
 
-  async function render() {
-    msg.innerHTML = "";
-    const chk = await Auth.requireRole("admin").catch((e) => ({ ok: false, reason: "error", e }));
-    if (chk.reason === "signin") return Auth.gate(panel, render);
-    if (!chk.ok) {
-      panel.innerHTML = '<div class="card">' +
-        (chk.reason === "forbidden"
-          ? "This account is not an admin. <button class='btn secondary small' id='so'>Sign out</button>"
-          : "Error: " + esc(chk.e ? chk.e.message : "unknown")) + "</div>";
-      const so = document.getElementById("so");
-      if (so) so.onclick = async () => { await Auth.signOut(); render(); };
-      return;
-    }
-    if (tab === "catalog") return catalogView(chk.profile);
-    if (tab === "rx") return rxView();
-    if (tab === "orders") return ordersView();
-    if (tab === "riders") return ridersView();
-    const names = { orders: "Order management", rx: "Prescription review", riders: "Rider management" };
-    panel.innerHTML = '<div class="card"><p class="muted">' + names[tab] +
-      " lands in a later phase. <button class='btn secondary small' id='so'>Sign out</button></p></div>";
-    document.getElementById("so").onclick = async () => { await Auth.signOut(); render(); };
+  // ── boot ───────────────────────────────────────────────────────────────
+  async function boot() {
+    var r = await Auth.requireRole("admin");
+    if (r.reason === "signin") { Auth.gate(view, boot); return; }
+    if (r.reason === "forbidden") { view.innerHTML = '<div class="card empty">This page is for shop admins only.</div>'; return; }
+    var nm = r.profile.name || "Admin";
+    document.getElementById("adminName").textContent = nm;
+    document.getElementById("adminAvatar").textContent = nm.trim().charAt(0).toUpperCase();
+    if (!bound) { bindChrome(); bound = true; }
+    updateBadges();
+    await show("dashboard");
+    setInterval(function () { if (cur === "dashboard") show("dashboard", true); }, 60000);
   }
 
-  // ── Catalog ──────────────────────────────────────────────────────────────
-  function catalogView(me) {
-    panel.innerHTML =
-      '<div class="card"><div class="row"><div style="flex:1"><b>Catalog</b> <span class="muted" id="cnt"></span></div>' +
-      '<button class="btn secondary small" id="so">Sign out</button></div>' +
-      '<div class="searchbar" style="margin-top:10px"><input id="cq" type="search" placeholder="Search medicines…" aria-label="Search catalog"></div>' +
-      '<div class="row"><input type="file" id="csv" accept=".csv" aria-label="CSV file" style="flex:1">' +
-      '<button class="btn small" id="imp" style="width:auto">Import CSV</button></div>' +
-      '<p class="muted" style="margin-top:6px">CSV columns: name, strength, price, stock. ' +
-      "Matches on name + strength, updates price/stock only. Fill the repo's " +
-      "catalog/medicines-seed.csv and upload it here.</p>" +
-      '<div id="imsg"></div></div>' +
-      '<div class="card" style="padding:6px"><table class="data"><thead><tr>' +
-      "<th>Medicine</th><th>Price ₹</th><th>Stock</th></tr></thead><tbody id='rows'></tbody></table>" +
-      '<div class="row" style="justify-content:space-between;padding:8px 6px">' +
-      '<button class="btn secondary small" id="prev">← Prev</button>' +
-      '<span class="muted" id="pg"></span>' +
-      '<button class="btn secondary small" id="next">Next →</button></div></div>';
-    document.getElementById("so").onclick = async () => { await Auth.signOut(); render(); };
-    document.getElementById("imp").onclick = importCSV;
-    const cq = document.getElementById("cq");
-    cq.value = q;
-    let t;
-    cq.oninput = () => { clearTimeout(t); t = setTimeout(() => { q = cq.value; page = 0; loadRows(); }, 300); };
-    document.getElementById("prev").onclick = () => { if (page > 0) { page--; loadRows(); } };
-    document.getElementById("next").onclick = () => { if ((page + 1) * PAGE < total) { page++; loadRows(); } };
-    loadRows();
-  }
-
-  async function loadRows() {
-    const tb = document.getElementById("rows");
-    try {
-      let query = DB.sb.from("medicines").select("*", { count: "exact" }).order("name");
-      if (q) query = query.ilike("name", `%${q.trim()}%`);
-      const { data, error, count } = await query.range(page * PAGE, page * PAGE + PAGE - 1);
-      if (error) throw error;
-      total = count || 0;
-      document.getElementById("cnt").textContent = total + " items";
-      document.getElementById("pg").textContent = "Page " + (page + 1) + " of " + Math.max(1, Math.ceil(total / PAGE));
-      tb.innerHTML = data.map((m) =>
-        "<tr><td><b>" + esc(m.name) + "</b><br><span class='muted'>" + esc(m.strength) + " · " + esc(m.form) +
-        (m.rx_required ? ' <span class="rx-badge">Rx</span>' : "") + "</span></td>" +
-        "<td><input type='number' min='0' step='0.01' data-id='" + m.id + "' data-f='price' value='" +
-        (m.price == null ? "" : m.price) + "' style='width:84px;min-height:36px' aria-label='Price for " + esc(m.name) + "'></td>" +
-        "<td><input type='number' min='0' step='1' data-id='" + m.id + "' data-f='stock' value='" + m.stock +
-        "' style='width:70px;min-height:36px' aria-label='Stock for " + esc(m.name) + "'></td></tr>"
-      ).join("") || "<tr><td colspan='3' class='muted'>No medicines found.</td></tr>";
-      tb.querySelectorAll("input").forEach((inp) => {
-        inp.addEventListener("change", async () => {
-          const v = inp.value === "" ? null : Number(inp.value);
-          if (v !== null && (isNaN(v) || v < 0)) { DB.showErr(msg, "Enter a non-negative number."); loadRows(); return; }
-          const { error } = await DB.sb.from("medicines")
-            .update({ [inp.dataset.f]: v }).eq("id", inp.dataset.id);
-          if (error) { DB.showErr(msg, error.message); return; }
-          inp.style.borderColor = "var(--brand)";
-          setTimeout(() => (inp.style.borderColor = ""), 800);
-        });
-      });
-    } catch (e) { DB.showErr(msg, e.message); }
-  }
-
-  // ── CSV import ───────────────────────────────────────────────────────────
-  function parseCSV(text) {
-    const rows = [];
-    let row = [], val = "", inQ = false;
-    for (let i = 0; i < text.length; i++) {
-      const c = text[i];
-      if (inQ) {
-        if (c === '"') { if (text[i + 1] === '"') { val += '"'; i++; } else inQ = false; }
-        else val += c;
-      } else if (c === '"') inQ = true;
-      else if (c === ",") { row.push(val); val = ""; }
-      else if (c === "\n" || c === "\r") {
-        if (c === "\r" && text[i + 1] === "\n") i++;
-        row.push(val); rows.push(row); row = []; val = "";
-      } else val += c;
-    }
-    if (val !== "" || row.length) { row.push(val); rows.push(row); }
-    return rows.filter((r) => r.length > 1 || r[0].trim() !== "");
-  }
-
-  async function importCSV() {
-    const file = document.getElementById("csv").files[0];
-    const box = document.getElementById("imsg");
-    if (!file) { DB.showErr(box, "Choose a CSV file first."); return; }
-    box.innerHTML = '<p class="muted">Reading file…</p>';
-    const rows = parseCSV(await file.text());
-    if (rows.length < 2) { DB.showErr(box, "CSV is empty."); return; }
-    const head = rows[0].map((h) => h.trim().toLowerCase());
-    const need = ["name", "strength", "price", "stock"];
-    const idx = {};
-    for (const n of need) { idx[n] = head.indexOf(n); if (idx[n] < 0) { DB.showErr(box, "Missing column: " + n); return; } }
-
-    // one fetch of id/name/strength for matching (catalog ~1000 rows)
-    const { data: all, error } = await DB.sb.from("medicines").select("id,name,strength").limit(2000);
-    if (error) { DB.showErr(box, error.message); return; }
-    const byKey = new Map(all.map((m) => [m.name.trim().toLowerCase() + "|" + (m.strength || "").trim().toLowerCase(), m.id]));
-
-    const updates = [];
-    let skipped = 0;
-    for (let i = 1; i < rows.length; i++) {
-      const r = rows[i];
-      const key = (r[idx.name] || "").trim().toLowerCase() + "|" + (r[idx.strength] || "").trim().toLowerCase();
-      const id = byKey.get(key);
-      const price = r[idx.price].trim() === "" ? null : Number(r[idx.price]);
-      const stock = r[idx.stock].trim() === "" ? null : parseInt(r[idx.stock], 10);
-      if (!id || (price === null && stock === null) ||
-          (price !== null && (isNaN(price) || price < 0)) ||
-          (stock !== null && (isNaN(stock) || stock < 0))) { skipped++; continue; }
-      const u = { id };
-      if (price !== null) u.price = price;
-      if (stock !== null) u.stock = stock;
-      updates.push(u);
-    }
-
-    let done = 0, failed = 0;
-    for (let i = 0; i < updates.length; i += 25) { // chunked to stay light
-      const chunk = updates.slice(i, i + 25);
-      const res = await Promise.all(chunk.map((u) => {
-        const patch = {};
-        if (u.price !== undefined) patch.price = u.price;
-        if (u.stock !== undefined) patch.stock = u.stock;
-        return DB.sb.from("medicines").update(patch).eq("id", u.id);
-      }));
-      res.forEach((r) => (r.error ? failed++ : done++));
-      box.innerHTML = '<p class="muted">Importing… ' + (done + failed) + " / " + updates.length + "</p>";
-    }
-    box.innerHTML = '<div class="ok">Import done: <b>' + done + "</b> updated" +
-      (skipped ? ", " + skipped + " skipped (no match / bad value)" : "") +
-      (failed ? ", " + failed + " failed" : "") + ".</div>";
-    page = 0; loadRows();
-  }
-
-  tabs.querySelectorAll(".chip").forEach((c) =>
-    c.classList.toggle("active", c.dataset.tab === tab));
-  // ── Prescriptions: pharmacist review ─────────────────────────────────────
-  async function rxView() {
-    panel.innerHTML = '<div class="card"><b>Prescriptions</b><div id="rxlist" style="margin-top:8px"></div></div>';
-    const box = document.getElementById("rxlist");
-    try {
-      const { data, error } = await DB.sb.from("prescriptions")
-        .select("*,profiles(name)").order("created_at", { ascending: false }).limit(50);
-      if (error) throw error;
-      if (!data.length) { box.innerHTML = '<p class="muted">No prescriptions yet.</p>'; return; }
-      box.innerHTML = data.map((p) =>
-        '<div class="card"><div class="row" style="justify-content:space-between"><div><b>' +
-        esc((p.profiles && p.profiles.name) || "Customer") + "</b><br><span class='muted'>" +
-        new Date(p.created_at).toLocaleString() + "</span></div>" +
-        '<span class="status ' + p.status + '">' + p.status + "</span></div>" +
-        '<div class="row" style="margin-top:8px;gap:8px">' +
-        '<button class="btn secondary small" data-view="' + esc(p.image_url) + '">View</button>' +
-        (p.status === "pending"
-          ? '<button class="btn small" data-ap="' + p.id + '">Approve</button>' +
-            '<button class="btn danger small" data-rj="' + p.id + '">Reject</button>'
-          : "") + "</div></div>"
-      ).join("");
-      box.querySelectorAll("[data-view]").forEach((b) => (b.onclick = async () => {
-        const { data: s, error: e } = await DB.sb.storage.from("prescriptions").createSignedUrl(b.dataset.view, 600);
-        if (e) return DB.showErr(msg, e.message);
-        window.open(s.signedUrl, "_blank");
-      }));
-      const review = async (id, status) => {
-        const { error } = await DB.sb.from("prescriptions")
-          .update({ status, reviewed_at: new Date().toISOString() }).eq("id", id);
-        if (error) return DB.showErr(msg, error.message);
-        rxView();
-      };
-      box.querySelectorAll("[data-ap]").forEach((b) => (b.onclick = () => review(b.dataset.ap, "approved")));
-      box.querySelectorAll("[data-rj]").forEach((b) => (b.onclick = () => review(b.dataset.rj, "rejected")));
-    } catch (e) { DB.showErr(msg, e.message); }
-  }
-
-  // ── Orders: status pipeline + rider assignment ────────────────────────────
-  let ostat = "";
-  async function ordersView() {
-    panel.innerHTML =
-      '<div class="card"><b>Orders</b><div class="chips" id="of" style="margin-top:8px"></div>' +
-      '<div id="olist"></div></div>';
-    const statuses = ["", "placed", "confirmed", "preparing", "assigned",
-      "picked_up", "out_for_delivery", "delivered", "cancelled"];
-    const of = document.getElementById("of");
-    of.innerHTML = statuses.map((s) =>
-      '<button class="chip' + (s === ostat ? " active" : "") + '" data-s="' + s + '">' +
-      (s || "All").replace(/_/g, " ") + "</button>").join("");
-    of.onclick = (e) => {
-      const b = e.target.closest("[data-s]");
-      if (b) { ostat = b.dataset.s; ordersView(); }
+  function bindChrome() {
+    document.getElementById("nav").addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-view]"); if (!b) return;
+      show(b.dataset.view);
+    });
+    document.getElementById("searchBtn").onclick = async function () {
+      await show("medicines");
+      var s = document.getElementById("medSearch"); if (s) s.focus();
     };
-    const box = document.getElementById("olist");
+    document.getElementById("bellBtn").onclick = function () { show("rx"); };
+    document.getElementById("supportLink").onclick = function (e) { e.preventDefault(); DB.toast("Call the shop owner — support number coming soon"); };
+    view.addEventListener("click", onClick);
+    view.addEventListener("change", onChange);
+    view.addEventListener("input", function (e) {
+      if (e.target.id === "medSearch") { medQ = e.target.value.trim(); loadMeds(); }
+    });
+  }
+
+  async function show(name, silent) {
+    cur = name;
+    document.querySelectorAll("#nav button").forEach(function (b) {
+      b.classList.toggle("active", b.dataset.view === name);
+    });
+    if (!silent) view.innerHTML = '<div class="card empty">Loading…</div>';
+    foot.textContent = "";
+    try { await VIEWS[name](); }
+    catch (e) { if (!silent) view.innerHTML = errBox(e); }
+    if (name === "dashboard") foot.textContent = "Last updated: " + fmtDate(new Date()) + " • Auto-refresh every 60s";
+  }
+
+  async function updateBadges() {
+    var r = await DB.sb.from("prescriptions").select("id", { count: "exact", head: true }).eq("status", "pending");
+    var n = r.count || 0;
+    ["rxBadge", "bellBadge"].forEach(function (id) {
+      var el = document.getElementById(id);
+      el.hidden = n === 0; el.textContent = n;
+    });
+  }
+
+  // ── shared order fetch (orders + customer names + item lines) ────────────
+  async function enrichOrders(orders) {
+    var ids = orders.map(function (o) { return o.id; });
+    var cids = [...new Set(orders.map(function (o) { return o.customer_id; }))];
+    var out = { names: {}, items: {} };
+    if (!ids.length) return out;
+    var pr = await DB.sb.from("profiles").select("id,name,phone").in("id", cids);
+    (pr.data || []).forEach(function (p) { out.names[p.id] = p; });
+    var it = await DB.sb.from("order_items").select("order_id,qty,medicines(name,strength)").in("order_id", ids);
+    (it.data || []).forEach(function (row) {
+      (out.items[row.order_id] = out.items[row.order_id] || []).push(row);
+    });
+    return out;
+  }
+  function itemSummary(lines) {
+    if (!lines || !lines.length) return "—";
+    var s = lines.slice(0, 2).map(function (l) {
+      var m = l.medicines || {};
+      return esc(m.name || "?") + (m.strength ? " " + esc(m.strength) : "") + " ×" + l.qty;
+    }).join(" • ");
+    return lines.length > 2 ? s + ' <span class="muted">+' + (lines.length - 2) + " more</span>" : s;
+  }
+  function orderRow(o, x) {
+    var c = x.names[o.customer_id] || {};
+    var adv = NEXT[o.status] ? '<button class="btn sm" data-act="adv" data-id="' + o.id + '" data-to="' + NEXT[o.status] + '">→ ' + esc(LBL[NEXT[o.status]]) + "</button>" : "";
+    var cancel = (o.status !== "delivered" && o.status !== "cancelled")
+      ? '<button class="btn sm danger" data-act="cancel" data-id="' + o.id + '">Cancel</button>' : "";
+    return "<tr><td class='oid'>" + shortId(o.id) + "<br><small class='muted'>" + ago(o.created_at) + "</small></td>" +
+      "<td><b>" + esc(c.name || "Customer") + "</b>" + (c.phone ? "<br><small class='muted'>" + esc(c.phone) + "</small>" : "") + "</td>" +
+      "<td class='items-cell'>" + itemSummary(x.items[o.id]) + "</td>" +
+      "<td><b>" + DB.money(o.total) + "</b></td>" +
+      "<td>" + pill(o.status) + "</td>" +
+      '<td><div class="row-actions">' + adv + cancel + "</div></td></tr>";
+  }
+
+  // ── Dashboard ────────────────────────────────────────────────────────────
+  async function vDashboard() {
+    var t0 = new Date(); t0.setHours(0, 0, 0, 0);
+    var t1 = new Date(t0); t1.setDate(t1.getDate() - 1);
+    var res = await Promise.all([
+      DB.sb.from("orders").select("id,total,status,created_at").gte("created_at", t1.toISOString()),
+      DB.sb.from("orders").select("id,customer_id,total,status,created_at").order("created_at", { ascending: false }).limit(6),
+      DB.sb.from("prescriptions").select("id", { count: "exact", head: true }).eq("status", "pending"),
+      DB.sb.from("medicines").select("id,name,strength,stock").eq("is_active", true).lte("stock", LOW_STOCK).order("stock").limit(60),
+    ]);
+    res.forEach(function (r) { if (r.error) throw r.error; });
+    var two = res[0].data || [], recent = res[1].data || [];
+    var pendRx = res[2].count || 0, low = res[3].data || [];
+    var iso0 = t0.toISOString();
+    var t = two.filter(function (o) { return o.created_at >= iso0; });
+    var y = two.filter(function (o) { return o.created_at < iso0; });
+    var rev = function (arr) { return arr.reduce(function (s, o) { return s + (o.status === "cancelled" ? 0 : Number(o.total)); }, 0); };
+    var pct = function (a, b) {
+      if (!b) return a ? "new today" : "—";
+      var p = Math.round((a - b) / b * 100);
+      return (p >= 0 ? "+" : "") + p + "% vs yesterday " + (p >= 0 ? "↑" : "↓");
+    };
+    var x = await enrichOrders(recent);
+    var cards = [
+      { ico: "🛍️", cls: "teal", label: "Today's Orders", num: t.length, sub: pct(t.length, y.length), subCls: "up" },
+      { ico: "💵", cls: "teal", label: "Revenue", num: inr0(rev(t)), sub: pct(rev(t), rev(y)), subCls: "up" },
+      { ico: "📄", cls: "amber", label: "Pending Rx Verification", num: pendRx, sub: pendRx ? "Requires action" : "All clear", subCls: "warn" },
+      { ico: "❗", cls: "red", label: "Low Stock Alerts", num: low.length, sub: low.length ? "Restock recommended" : "Stock healthy", subCls: "bad" },
+    ];
+    var html = head("Dashboard", "Overview of today's pharmacy operations and deliveries • Today, " +
+      new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }));
+    html += '<div class="stats">' + cards.map(function (c) {
+      return '<div class="stat"><div class="stat-top"><span class="stat-ico ' + c.cls + '">' + c.ico + "</span>" + esc(c.label) +
+        '</div><div class="stat-num">' + c.num + '</div><div class="stat-sub ' + c.subCls + '">' + esc(c.sub) + "</div></div>";
+    }).join("") + "</div>";
+    html += '<div class="cols"><div class="card"><div class="card-head"><h3>Recent Orders</h3>' +
+      '<button class="link" data-act="nav" data-view="orders">View All →</button></div>' +
+      (recent.length ? '<table class="grid"><tr><th>Order ID</th><th>Customer</th><th>Items</th><th>Amount</th><th>Status</th></tr>' +
+        recent.map(function (o) {
+          var c = x.names[o.customer_id] || {};
+          return "<tr><td class='oid'>" + shortId(o.id) + "</td><td>" + esc(c.name || "Customer") + "</td>" +
+            "<td class='items-cell'>" + itemSummary(x.items[o.id]) + "</td><td><b>" + DB.money(o.total) + "</b></td><td>" + pill(o.status) + "</td></tr>";
+        }).join("") + "</table>" : '<div class="empty">No orders yet.</div>') + "</div>";
+    html += '<div class="card"><div class="card-head"><h3>⚠️ Low Stock Alerts</h3></div>' +
+      (low.length ? low.slice(0, 5).map(function (m) {
+        return '<div class="stock-row"><span class="stock-ico">' + (m.stock <= 5 ? "❗" : "💊") + "</span><div><b>" +
+          esc(m.name) + (m.strength ? " " + esc(m.strength) : "") + "</b><small class='" + (m.stock <= 5 ? "" : "amber") + "'>" +
+          m.stock + " left • Reorder at " + LOW_STOCK + "</small></div></div>";
+      }).join("") : '<div class="empty">Stock levels look good.</div>') +
+      '<button class="btn-outline" data-act="nav" data-view="medicines">+ Manage Inventory</button></div></div>';
+    view.innerHTML = html;
+  }
+
+  // ── Orders ───────────────────────────────────────────────────────────────
+  var FILTERS = ["all", "placed", "awaiting_rx", "confirmed", "preparing", "out_for_delivery", "delivered", "cancelled"];
+  async function vOrders() {
+    view.innerHTML = head("Orders", "Tap → to move an order to its next stage.") +
+      '<div class="chips">' + FILTERS.map(function (f) {
+        return '<button class="chip' + (f === orderFilter ? " active" : "") + '" data-act="filter" data-f="' + f + '">' +
+          (f === "all" ? "All" : esc(LBL[f])) + "</button>";
+      }).join("") + '</div><div class="card"><div id="olist"><div class="empty">Loading…</div></div></div>';
+    await loadOrders();
+  }
+  async function loadOrders() {
+    var q = DB.sb.from("orders").select("id,customer_id,total,status,delivery_slot,created_at")
+      .order("created_at", { ascending: false }).limit(100);
+    if (orderFilter !== "all") q = q.eq("status", orderFilter);
+    var r = await q; if (r.error) throw r.error;
+    var x = await enrichOrders(r.data || []);
+    document.getElementById("olist").innerHTML = (r.data && r.data.length)
+      ? '<table class="grid"><tr><th>Order</th><th>Customer</th><th>Items</th><th>Amount</th><th>Status</th><th>Actions</th></tr>' +
+        r.data.map(function (o) { return orderRow(o, x); }).join("") + "</table>"
+      : '<div class="empty">No orders in this stage.</div>';
+  }
+
+  // ── Medicines ────────────────────────────────────────────────────────────
+  async function vMedicines() {
+    view.innerHTML = head("Medicines", "Price and stock edits go live on the customer app immediately.") +
+      '<div class="form-card"><b>Add medicine</b><div class="form-grid" style="margin-top:10px">' +
+      '<input id="mName" placeholder="Name *"><input id="mBrand" placeholder="Brand"><input id="mStrength" placeholder="Strength (500mg)">' +
+      '<select id="mForm"><option>Tablet</option><option>Capsule</option><option>Syrup</option><option>Drops</option><option>Injection</option><option>Inhaler</option><option>Ointment</option><option>Other</option></select>' +
+      '<input id="mPack" placeholder="Pack (10 tabs)"><input id="mCat" placeholder="Category">' +
+      '<input id="mPrice" type="number" min="0" step="0.01" placeholder="Price ₹ *">' +
+      '<input id="mStock" type="number" min="0" step="1" placeholder="Stock *">' +
+      "</div>" +
+      '<div class="row" style="margin-top:10px;align-items:center"><label style="display:flex;gap:6px;align-items:center;font-size:14px"><input type="checkbox" id="mRx"> Rx required</label>' +
+      '<span style="flex:1"></span><button class="btn" data-act="med-add">Add medicine</button></div></div>' +
+      '<input class="searchbar" id="medSearch" placeholder="🔍 Search medicines…" value="' + esc(medQ) + '">' +
+      '<div class="card"><div id="mlist"><div class="empty">Loading…</div></div></div>';
+    await loadMeds();
+  }
+  async function loadMeds() {
+    var q = DB.sb.from("medicines").select("id,name,brand,strength,form,pack_size,price,stock,rx_required,is_active")
+      .order("name").limit(200);
+    if (medQ) q = q.ilike("name", "%" + medQ + "%");
+    var r = await q; if (r.error) throw r.error;
+    var el = document.getElementById("mlist"); if (!el) return;
+    el.innerHTML = (r.data && r.data.length)
+      ? '<table class="grid"><tr><th>Medicine</th><th>Price ₹</th><th>Stock</th><th>Rx</th><th>Live</th><th></th></tr>' +
+        r.data.map(function (m) {
+          return "<tr><td><b>" + esc(m.name) + "</b>" + (m.strength ? " " + esc(m.strength) : "") +
+            "<br><small class='muted'>" + esc([m.brand, m.form, m.pack_size].filter(Boolean).join(" • ")) + "</small></td>" +
+            '<td><input class="mini-input" data-k="price" data-id="' + m.id + '" type="number" min="0" step="0.01" value="' + (m.price == null ? "" : m.price) + '"></td>' +
+            '<td><input class="mini-input" data-k="stock" data-id="' + m.id + '" type="number" min="0" step="1" value="' + m.stock + '"></td>' +
+            "<td>" + (m.rx_required ? "🔒" : "—") + "</td>" +
+            '<td><input type="checkbox" data-act="med-live" data-id="' + m.id + '"' + (m.is_active ? " checked" : "") + "></td>" +
+            '<td><button class="btn sm" data-act="med-save" data-id="' + m.id + '">Save</button></td></tr>';
+        }).join("") + "</table>"
+      : '<div class="empty">No medicines found.</div>';
+  }
+
+  // ── Prescriptions ────────────────────────────────────────────────────────
+  async function vRx() {
+    var r = await DB.sb.from("prescriptions").select("id,customer_id,image_url,status,created_at")
+      .order("created_at", { ascending: false }).limit(40);
+    if (r.error) throw r.error;
+    var rows = r.data || [];
+    var cids = [...new Set(rows.map(function (x) { return x.customer_id; }))];
+    var names = {};
+    if (cids.length) {
+      var pr = await DB.sb.from("profiles").select("id,name,phone").in("id", cids);
+      (pr.data || []).forEach(function (p) { names[p.id] = p; });
+    }
+    var pend = rows.filter(function (x) { return x.status === "pending"; });
+    var done = rows.filter(function (x) { return x.status !== "pending"; });
+    for (var i = 0; i < pend.length; i++) {
+      var s = await DB.sb.storage.from("prescriptions").createSignedUrl(pend[i].image_url, 600);
+      pend[i].url = s.data ? s.data.signedUrl : null;
+    }
+    var card = function (x, actions) {
+      var c = names[x.customer_id] || {};
+      return '<div class="rx-card">' +
+        (x.url ? '<img src="' + x.url + '" data-act="rx-view" data-url="' + esc(x.url) + '" alt="prescription">' : '<div class="empty">no image</div>') +
+        '<div class="rx-meta"><b>' + esc(c.name || "Customer") + "</b>" +
+        (c.phone ? "<small>" + esc(c.phone) + "</small>" : "") +
+        "<small>Uploaded " + ago(x.created_at) + "</small>" +
+        (actions ? '<div class="row-actions" style="margin-top:8px">' +
+          '<button class="btn sm" data-act="rx-ok" data-id="' + x.id + '">Approve</button>' +
+          '<button class="btn sm danger" data-act="rx-no" data-id="' + x.id + '">Reject</button></div>'
+          : '<div style="margin-top:6px">' + pill(x.status) + "</div>") + "</div></div>";
+    };
+    view.innerHTML = head("Prescriptions", "Approve a prescription before its medicines can be sold.") +
+      '<div class="card"><div class="card-head"><h3>Pending verification (' + pend.length + ")</h3></div>" +
+      (pend.length ? pend.map(function (x) { return card(x, true); }).join("") : '<div class="empty">Nothing waiting. 🎉</div>') + "</div>" +
+      '<div class="card" style="margin-top:18px"><div class="card-head"><h3>Reviewed</h3></div>' +
+      (done.length ? done.map(function (x) { return card(x, false); }).join("") : '<div class="empty">No reviewed prescriptions yet.</div>') + "</div>";
+  }
+
+  // ── Delivery staff ───────────────────────────────────────────────────────
+  async function vStaff() {
+    var r = await DB.sb.from("profiles").select("id,name,phone,created_at").eq("role", "rider").order("created_at", { ascending: false });
+    if (r.error) throw r.error;
+    view.innerHTML = head("Delivery Staff", "Riders sign up in the app; their role is set to “rider” in Supabase → Table Editor → profiles.") +
+      '<div class="card">' + ((r.data && r.data.length)
+        ? '<table class="grid"><tr><th>Name</th><th>Phone</th><th>Since</th></tr>' + r.data.map(function (p) {
+            return "<tr><td><b>" + esc(p.name || "—") + "</b></td><td>" + esc(p.phone || "—") + "</td><td>" + fmtDate(p.created_at) + "</td></tr>";
+          }).join("") + "</table>"
+        : '<div class="empty">No riders yet.</div>') + "</div>";
+  }
+
+  // ── Reports ──────────────────────────────────────────────────────────────
+  async function vReports() {
+    var o = await DB.sb.from("orders").select("id,total,status").neq("status", "cancelled").limit(2000);
+    if (o.error) throw o.error;
+    var rows = o.data || [];
+    var rev = rows.reduce(function (s, x) { return s + Number(x.total); }, 0);
+    var it = await DB.sb.from("order_items").select("qty,medicines(name)").limit(2000);
+    if (it.error) throw it.error;
+    var byMed = {};
+    (it.data || []).forEach(function (rr) {
+      var n = (rr.medicines && rr.medicines.name) || "?";
+      byMed[n] = (byMed[n] || 0) + rr.qty;
+    });
+    var top = Object.keys(byMed).sort(function (a, b) { return byMed[b] - byMed[a]; }).slice(0, 5);
+    view.innerHTML = head("Reports", "All-time, excluding cancelled orders.") +
+      '<div class="stats" style="grid-template-columns:repeat(3,1fr)">' +
+      '<div class="stat"><div class="stat-top"><span class="stat-ico teal">💵</span>Total revenue</div><div class="stat-num">' + inr0(rev) + "</div></div>" +
+      '<div class="stat"><div class="stat-top"><span class="stat-ico teal">🛍️</span>Total orders</div><div class="stat-num">' + rows.length + "</div></div>" +
+      '<div class="stat"><div class="stat-top"><span class="stat-ico amber">📊</span>Avg order value</div><div class="stat-num">' + inr0(rows.length ? rev / rows.length : 0) + "</div></div></div>" +
+      '<div class="card"><div class="card-head"><h3>Top medicines by quantity</h3></div>' +
+      (top.length ? '<table class="grid"><tr><th>Medicine</th><th>Qty sold</th></tr>' +
+        top.map(function (n) { return "<tr><td>" + esc(n) + "</td><td><b>" + byMed[n] + "</b></td></tr>"; }).join("") + "</table>"
+        : '<div class="empty">No sales yet.</div>') + "</div>";
+  }
+
+  // ── Settings ─────────────────────────────────────────────────────────────
+  function vSettings() {
+    view.innerHTML = head("Settings", "Shop details shown across the app.") +
+      '<div class="card"><table class="grid">' +
+      "<tr><td><b>Shop name</b></td><td>Jiban Jyoti Medical Store (JJ)</td></tr>" +
+      "<tr><td><b>Address</b></td><td>Uttarpada, Jaleswar, Odisha</td></tr>" +
+      "<tr><td><b>Payment</b></td><td>Cash on Delivery</td></tr>" +
+      "<tr><td><b>Low-stock threshold</b></td><td>" + LOW_STOCK + " units</td></tr>" +
+      '</table><div style="margin-top:16px"><button class="btn ghost" data-act="signout">Sign out</button></div></div>';
+  }
+
+  var VIEWS = { dashboard: vDashboard, orders: vOrders, medicines: vMedicines, rx: vRx, staff: vStaff, reports: vReports, settings: vSettings };
+
+  // ── actions (delegated) ──────────────────────────────────────────────────
+  function rowVals(id) {
+    var vals = {};
+    view.querySelectorAll("input[data-id='" + id + "']").forEach(function (inp) {
+      if (inp.dataset.k) vals[inp.dataset.k] = inp.value === "" ? null : Number(inp.value);
+    });
+    return vals;
+  }
+  async function onClick(e) {
+    var b = e.target.closest("[data-act]"); if (!b) return;
+    var act = b.dataset.act, id = b.dataset.id;
     try {
-      let qy = DB.sb.from("orders").select(
-        "*,order_items(qty,unit_price,medicines(name))," +
-        "customer:profiles!orders_customer_id_fkey(name,phone)," +
-        "rider:profiles!orders_rider_id_fkey(name)," +
-        "addresses(address_text,landmark)"
-      ).order("created_at", { ascending: false }).limit(50);
-      if (ostat) qy = qy.eq("status", ostat);
-      const { data, error } = await qy;
-      if (error) throw error;
-      const { data: riders } = await DB.sb.from("profiles").select("id,name").eq("role", "rider");
-      box.innerHTML = data.map((o) => orderCard(o, riders || [])).join("") ||
-        '<p class="muted">No orders.</p>';
-      box.onclick = async (e) => {
-        const b = e.target.closest("[data-act]");
-        if (!b) return;
-        const id = b.dataset.id;
-        const card = b.closest("[data-order]");
-        try {
-          if (b.dataset.act === "assign") {
-            const sel = card.querySelector("[data-rider]");
-            if (!sel.value) return DB.showErr(msg, "Pick a rider first.");
-            await setStatus(id, "assigned", { rider_id: sel.value });
-          } else {
-            await setStatus(id, b.dataset.act);
-          }
-          ordersView();
-        } catch (err) { DB.showErr(msg, err.message); }
-      };
-    } catch (e) { DB.showErr(msg, e.message); }
+      if (act === "nav") { await show(b.dataset.view); }
+      else if (act === "filter") { orderFilter = b.dataset.f; await vOrders(); }
+      else if (act === "adv") {
+        var r = await DB.sb.from("orders").update({ status: b.dataset.to }).eq("id", id);
+        if (r.error) throw r.error;
+        DB.toast("Order → " + LBL[b.dataset.to]); await show(cur, true);
+      }
+      else if (act === "cancel") {
+        if (!confirm("Cancel this order?")) return;
+        var c = await DB.sb.from("orders").update({ status: "cancelled" }).eq("id", id);
+        if (c.error) throw c.error;
+        DB.toast("Order cancelled"); await show(cur, true);
+      }
+      else if (act === "med-save") {
+        var v = rowVals(id);
+        var u = await DB.sb.from("medicines").update({ price: v.price, stock: v.stock == null ? 0 : v.stock }).eq("id", id);
+        if (u.error) throw u.error;
+        DB.toast("Saved");
+      }
+      else if (act === "med-add") {
+        var nm = document.getElementById("mName").value.trim();
+        var pr = document.getElementById("mPrice").value, st = document.getElementById("mStock").value;
+        if (!nm || pr === "" || st === "") { DB.toast("Name, price and stock are required"); return; }
+        var ins = await DB.sb.from("medicines").insert({
+          name: nm, brand: document.getElementById("mBrand").value.trim(),
+          strength: document.getElementById("mStrength").value.trim(),
+          form: document.getElementById("mForm").value,
+          pack_size: document.getElementById("mPack").value.trim(),
+          category: document.getElementById("mCat").value.trim() || "General",
+          price: Number(pr), stock: Number(st),
+          rx_required: document.getElementById("mRx").checked,
+        });
+        if (ins.error) throw ins.error;
+        DB.toast("Medicine added"); await show("medicines", true);
+      }
+      else if (act === "rx-ok" || act === "rx-no") {
+        var stt = act === "rx-ok" ? "approved" : "rejected";
+        var rr = await DB.sb.from("prescriptions").update({ status: stt, reviewed_at: new Date().toISOString() }).eq("id", id);
+        if (rr.error) throw rr.error;
+        DB.toast("Prescription " + stt); updateBadges(); await show("rx", true);
+      }
+      else if (act === "rx-view") { window.open(b.dataset.url, "_blank"); }
+      else if (act === "signout") { await Auth.signOut(); location.reload(); }
+    } catch (err) { DB.toast("Error: " + err.message); }
+  }
+  function onChange(e) {
+    var b = e.target.closest("[data-act='med-live']"); if (!b) return;
+    DB.sb.from("medicines").update({ is_active: b.checked }).eq("id", b.dataset.id).then(function (r) {
+      DB.toast(r.error ? "Error: " + r.error.message : (b.checked ? "Live on store" : "Hidden from store"));
+    });
   }
 
-  async function setStatus(id, status, extra) {
-    const { error } = await DB.sb.from("orders").update(Object.assign({ status }, extra)).eq("id", id);
-    if (error) throw error;
-  }
-
-  function orderCard(o, riders) {
-    const items = o.order_items.map((i) =>
-      "<div class='row' style='justify-content:space-between'><span>" + esc(i.medicines.name) +
-      " × " + i.qty + "</span><span>" + DB.money(i.unit_price * i.qty) + "</span></div>").join("");
-    let actions = "";
-    if (o.status === "placed")
-      actions = btn("confirmed", "Confirm", o.id) + btn("cancelled", "Cancel", o.id, "danger");
-    else if (o.status === "confirmed")
-      actions = btn("preparing", "Start preparing", o.id) + btn("cancelled", "Cancel", o.id, "danger");
-    else if (o.status === "preparing")
-      actions = '<select data-rider aria-label="Rider"><option value="">— rider —</option>' +
-        riders.map((r) => "<option value='" + r.id + "'>" + esc(r.name || "Rider") + "</option>").join("") +
-        "</select>" + btn("assign", "Assign rider", o.id);
-    else if (!["delivered", "cancelled"].includes(o.status))
-      actions = btn("cancelled", "Cancel", o.id, "danger");
-    return '<div class="card" data-order><div class="row" style="justify-content:space-between">' +
-      "<b>#" + o.id.slice(0, 8) + "</b>" +
-      '<span class="status ' + o.status + '">' + o.status.replace(/_/g, " ") + "</span></div>" +
-      '<p class="muted">' + new Date(o.created_at).toLocaleString() +
-      (o.customer ? " · " + esc(o.customer.name || "") + (o.customer.phone ? " · " + esc(o.customer.phone) : "") : "") +
-      (o.rider ? " · 🛵 " + esc(o.rider.name || "") : "") + "</p>" +
-      (o.addresses ? '<p class="muted">📍 ' + esc(o.addresses.address_text) +
-        (o.addresses.landmark ? " (" + esc(o.addresses.landmark) + ")" : "") + "</p>" : "") +
-      items +
-      '<div class="row" style="justify-content:space-between;margin-top:6px"><span>' +
-      esc(o.delivery_slot || "") + " · " + o.payment_method.toUpperCase() + "</span><b class='price'>" +
-      DB.money(o.total) + "</b></div>" +
-      (actions ? '<div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap">' + actions + "</div>" : "") +
-      "</div>";
-  }
-  function btn(act, label, id, kind) {
-    return '<button class="btn small ' + (kind || "") + '" data-act="' + act + '" data-id="' + id + '">' + label + "</button>";
-  }
-
-  // ── Riders ─────────────────────────────────────────────────────────────────
-  async function ridersView() {
-    panel.innerHTML = '<div class="card"><b>Riders</b><div id="rlist" style="margin-top:8px"></div>' +
-      '<p class="muted" style="margin-top:8px">To add a rider: they create an account in the rider app, then run ' +
-      "<code>update profiles set role='rider' where id='&lt;their-uuid&gt;';</code> in Supabase SQL.</p></div>";
-    const box = document.getElementById("rlist");
-    try {
-      const { data, error } = await DB.sb.from("profiles").select("id,name,phone").eq("role", "rider");
-      if (error) throw error;
-      box.innerHTML = data.map((r) =>
-        '<div class="row" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid #edf1ef"><div><b>' +
-        esc(r.name || "Rider") + "</b><br><span class='muted'>" + esc(r.phone || "") + "</span></div></div>"
-      ).join("") || '<p class="muted">No riders yet.</p>';
-    } catch (e) { DB.showErr(msg, e.message); }
-  }
-
-  render();
+  boot();
 })();

@@ -3,21 +3,50 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Admin — Medical Shop</title>
+<title>Admin — Jiban Jyoti Medical Store</title>
 <link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/admin.css">
 </head>
 <body>
-<header class="topbar"><h1>⚙️ Admin</h1></header>
-<main>
-  <div class="chips" id="tabs">
-    <button class="chip active" data-tab="orders">Orders</button>
-    <button class="chip" data-tab="catalog">Catalog</button>
-    <button class="chip" data-tab="rx">Prescriptions</button>
-    <button class="chip" data-tab="riders">Riders</button>
+<div class="admin-shell">
+  <aside class="sidebar">
+    <div class="menu-card">
+      <div class="menu-title">MENU</div>
+      <nav id="nav">
+        <button data-view="dashboard" class="active"><span class="ni">📊</span>Dashboard</button>
+        <button data-view="orders"><span class="ni">📋</span>Orders</button>
+        <button data-view="medicines"><span class="ni">💊</span>Medicines</button>
+        <button data-view="rx"><span class="ni">🧾</span>Prescriptions<span class="badge" id="rxBadge" hidden></span></button>
+        <button data-view="staff"><span class="ni">🛵</span>Delivery Staff</button>
+        <button data-view="reports"><span class="ni">📈</span>Reports</button>
+        <button data-view="settings"><span class="ni">⚙️</span>Settings</button>
+      </nav>
+      <div class="help-card">
+        <div>Need Help?</div>
+        <a href="#" id="supportLink">Contact Support →</a>
+      </div>
+    </div>
+  </aside>
+  <div class="main">
+    <header class="admin-topbar">
+      <div class="brand">
+        <span class="logo">✚</span>
+        <div class="brand-text"><b>Jiban Jyoti Medical Store</b><small>Admin Panel</small></div>
+      </div>
+      <div class="top-actions">
+        <button class="icon-btn" id="searchBtn" title="Search medicines">🔍</button>
+        <button class="icon-btn" id="bellBtn" title="Pending prescriptions">🔔<span class="badge" id="bellBadge" hidden></span></button>
+        <div class="admin-user">
+          <span class="avatar" id="adminAvatar">A</span>
+          <div class="admin-meta"><b id="adminName">Admin</b><small>Admin</small></div>
+          <span class="chev">▾</span>
+        </div>
+      </div>
+    </header>
+    <main id="view"></main>
+    <footer class="admin-foot" id="foot"></footer>
   </div>
-  <div id="msg"></div>
-  <div id="panel"></div>
-</main>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="js/config.js"></script>
 <script src="js/db.js"></script>
