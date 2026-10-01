@@ -51,7 +51,8 @@
       '<div class="row"><input type="file" id="csv" accept=".csv" aria-label="CSV file" style="flex:1">' +
       '<button class="btn small" id="imp" style="width:auto">Import CSV</button></div>' +
       '<p class="muted" style="margin-top:6px">CSV columns: name, strength, price, stock. ' +
-      'Matches on name + strength, updates price/stock only. <a href="../catalog/medicines-seed.csv">seed file</a></p>' +
+      "Matches on name + strength, updates price/stock only. Fill the repo's " +
+      "catalog/medicines-seed.csv and upload it here.</p>" +
       '<div id="imsg"></div></div>' +
       '<div class="card" style="padding:6px"><table class="data"><thead><tr>' +
       "<th>Medicine</th><th>Price ₹</th><th>Stock</th></tr></thead><tbody id='rows'></tbody></table>" +

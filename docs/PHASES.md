@@ -5,8 +5,8 @@
 - [ ] **B. Customer app** — browse/search/cart/checkout, auth, addresses
 - [ ] **C. Prescriptions** — customer upload, admin approve/reject, Rx gate at checkout
 - [ ] **D. Admin orders** — status pipeline, rider assignment
-- [ ] **E. Rider app** — assigned orders, pickup/delivery status updates
-- [ ] **F. Deploy** — Supabase apply, Vercel deploy, UptimeRobot keep-alive
+- [x] **E. Rider app** — assigned orders, pickup/delivery status updates
+- [x] **F. Deploy** — docs/DEPLOY.md: Supabase apply, Vercel deploy, UptimeRobot keep-alive
 
 ## Deploy notes (Phase F)
 

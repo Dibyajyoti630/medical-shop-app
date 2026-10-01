@@ -30,8 +30,8 @@
     Inhaler: "form-inhaler.webp", Sachet: "form-sachet.webp"
   };
   function medImage(m) {
-    // ponytail: images served from repo static path in dev; CDN path in prod (same relative URL)
-    return m.image_url || ("../catalog/images/" + (FORM_IMG[m.form] || FORM_IMG.Tablet));
+    // ponytail: images ship with the site under web/images; same relative URL in dev and prod
+    return m.image_url || ("images/" + (FORM_IMG[m.form] || FORM_IMG.Tablet));
   }
 
   function money(n) { return "₹" + Number(n || 0).toFixed(2); }
