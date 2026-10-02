@@ -5,9 +5,10 @@
   const wrap = document.getElementById("wrap"), msg = document.getElementById("msg");
   const esc = DB.esc;
   const FREE_ABOVE = 499, FEE = 30;
-  // Prescription explicitly chosen for THIS order (per-order Rx requirement).
-  // Survives re-renders (qty changes); validated against the fresh list each render.
-  let selRxId = null;
+  // Prescription choice for THIS order (per-order Rx requirement): exactly one
+  // of — an existing prescription, uploading a new one, or a chemist-approval
+  // request. Survives re-renders; validated against the fresh list each render.
+  let rxPick = null;
 
   async function render() {
     msg.innerHTML = "";
@@ -44,27 +45,37 @@
       addrs = results[0].data || [];
       if (hasRx) {
         rxs = (results[1] && results[1].data) || [];
-        if (selRxId && !rxs.some(r => r.id === selRxId)) selRxId = null;
+        if (rxPick && rxPick.t === "rx" && !rxs.some(r => r.id === rxPick.id)) rxPick = null;
       }
     } catch (e) { return DB.showErr(msg, e.message); }
 
     const addr = addrs.length ? addrs[0] : null;
 
-    // Prescription picker: one explicit choice per order. Upload + chemist-
-    // approval request live right beside the ordered medicines.
-    const rxSec = !hasRx ? '' :
+    // Prescription picker: exactly one choice per order — an existing
+    // prescription, uploading a new one, or a chemist-approval request.
+    const curRxVal = !rxPick ? null : rxPick.t === "rx" ? "rx:" + rxPick.id : rxPick.t;
+    const rxOpt = function (val, title, sub, status) {
+      return '<label class="rx-opt"><input type="radio" name="rxsel" value="' + val + '"' + (curRxVal === val ? " checked" : "") + ">" +
+        '<span class="rx-opt-body"><b>' + title + "</b>" +
+        (sub ? '<span class="muted">' + sub + "</span>" : "") +
+        (status ? '<span class="status ' + status + '">' + esc(status) + "</span>" : "") + "</span></label>";
+    };
+    const rxSec = !hasRx ? "" :
       '<div class="card"><h2 style="font-size:16px;margin-bottom:4px">Prescription for Rx medicines</h2>' +
-      '<p class="muted" style="margin-bottom:10px">Choose which prescription this order uses — required for every order with Rx medicines.</p>' +
-      '<div id="rxlist">' + (rxs.map(r =>
-        '<label class="rx-opt"><input type="radio" name="rxsel" value="' + r.id + '"' + (selRxId === r.id ? ' checked' : '') + '>' +
-        '<span class="rx-opt-body"><b>' + (r.image_url ? 'Prescription' : 'Chemist approval') + '</b>' +
-        '<span class="muted">' + new Date(r.created_at).toLocaleString() + '</span>' +
-        '<span class="status ' + r.status + '">' + esc(r.status) + '</span></span></label>'
-      ).join('') || '<p class="muted">No prescriptions yet — upload one below.</p>') + '</div>' +
-      '<div style="margin-top:12px"><label for="rxfile">Upload new prescription</label>' +
-      '<input type="file" id="rxfile" accept="image/*" aria-label="Upload prescription">' +
-      '<button class="btn secondary small" id="rxupbtn" style="margin-top:8px">Upload &amp; attach</button></div>' +
-      '<button class="btn secondary small" id="rxreqbtn" style="margin-top:8px">No prescription? Request chemist approval</button></div>';
+      '<p class="muted" style="margin-bottom:10px">Choose one option — required for every order with Rx medicines.</p>' +
+      "<div>" +
+        rxs.map(r => rxOpt("rx:" + r.id, r.image_url ? "Prescription" : "Chemist approval",
+          new Date(r.created_at).toLocaleString(), r.status)).join("") +
+        rxOpt("upload", "Upload a new prescription", "Take a photo of your prescription") +
+        rxOpt("request", "No prescription? Request chemist approval", "The chemist will call you to verify") +
+      "</div>" +
+      '<div id="rxuploadbox"' + (curRxVal === "upload" ? "" : " hidden") + ' style="margin-top:4px">' +
+        '<label for="rxfile">Photo of prescription</label>' +
+        '<input type="file" id="rxfile" accept="image/*" aria-label="Upload prescription">' +
+        '<button class="btn secondary small" id="rxupbtn" style="margin-top:8px">Upload &amp; attach</button></div>' +
+      '<div id="rxreqbox"' + (curRxVal === "request" ? "" : " hidden") + ' style="margin-top:4px">' +
+        '<button class="btn secondary small" id="rxreqbtn">Send approval request</button></div>' +
+      "</div>";
 
     wrap.innerHTML =
       '<div class="card">' +
@@ -113,11 +124,20 @@
     document.getElementById("pay-upi").onclick = () => DB.toast("UPI payments coming soon");
 
     if (hasRx) {
+      const rxValOf = () => (!rxPick ? null : rxPick.t === "rx" ? "rx:" + rxPick.id : rxPick.t);
+      const syncRxBoxes = () => {
+        const cv = rxValOf();
+        const up = document.getElementById("rxuploadbox"), rq = document.getElementById("rxreqbox");
+        if (up) up.hidden = cv !== "upload";
+        if (rq) rq.hidden = cv !== "request";
+      };
       // Radios can't be unchecked natively — tapping the selected one again clears it.
       wrap.querySelectorAll('input[name="rxsel"]').forEach(r => r.addEventListener("click", (e) => {
-        if (selRxId === r.value) { e.preventDefault(); r.checked = false; selRxId = null; }
-        else selRxId = r.value;
+        const v = r.value;
+        if (rxValOf() === v) { e.preventDefault(); r.checked = false; rxPick = null; }
+        else rxPick = v === "upload" ? { t: "upload" } : v === "request" ? { t: "request" } : { t: "rx", id: v.slice(3) };
         msg.innerHTML = "";
+        syncRxBoxes();
       }));
       const upBtn = document.getElementById("rxupbtn");
       upBtn.onclick = async () => {
@@ -134,7 +154,7 @@
           const { data: ins, error: insErr } = await DB.sb.from("prescriptions")
             .insert({ customer_id: me.id, image_url: path }).select("id").single();
           if (insErr) throw insErr;
-          selRxId = ins.id;
+          rxPick = { t: "rx", id: ins.id };
           DB.toast("Prescription uploaded — attached to this order");
           render();
         } catch (e) { DB.showErr(msg, e.message); upBtn.disabled = false; upBtn.textContent = "Upload & attach"; }
@@ -143,13 +163,12 @@
       reqBtn.onclick = async () => {
         try {
           const existing = rxs.find(r => r.status === "pending" && !r.image_url);
-          if (existing) { selRxId = existing.id; DB.toast("Using your pending approval request"); render(); return; }
-          if (!confirm("No prescription? The chemist will call you to verify, then approve your request.")) return;
+          if (existing) { rxPick = { t: "rx", id: existing.id }; DB.toast("Using your pending approval request"); render(); return; }
           reqBtn.disabled = true;
           const { data, error } = await DB.sb.from("prescriptions")
             .insert({ customer_id: me.id, image_url: null, status: "pending" }).select("id").single();
           if (error) throw error;
-          selRxId = data.id;
+          rxPick = { t: "rx", id: data.id };
           DB.toast("Request sent — the chemist will call you");
           render();
         } catch (e) { DB.showErr(msg, e.message); reqBtn.disabled = false; }
@@ -167,8 +186,10 @@
           return;
         }
         if (!addr) return DB.showErr(msg, "Please add a delivery address in Profile.");
-        const selRx = hasRx ? rxs.find(r => r.id === selRxId) : null;
-        if (hasRx && !selRx) return DB.showErr(msg, "Select a prescription for the Rx medicines in your cart.");
+        const selRx = hasRx && rxPick && rxPick.t === "rx" ? rxs.find(r => r.id === rxPick.id) : null;
+        if (hasRx && !selRx) return DB.showErr(msg, !rxPick ? "Choose a prescription option for the Rx medicines in your cart."
+          : rxPick.t === "upload" ? "Upload your prescription photo to continue."
+          : "Send the chemist approval request to continue.");
         // Re-check live stock (page data may be stale if the shop just sold some).
         const fresh = await DB.sb.from("medicines").select("id,name,stock").in("id", items.map(m => m.id));
         if (fresh.error) throw fresh.error;
