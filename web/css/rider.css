@@ -34,7 +34,14 @@ body.rider main { max-width: 560px; margin: 0 auto; }
 .r-manage { border: 3px solid #f2731d; border-radius: 18px; background: #fff; padding: 16px 14px; margin: 18px 0; }
 .r-manage-pill { display: block; width: fit-content; margin: 0 auto; border: 1.5px solid #f2731d; color: #d95f10; font-weight: 700; font-size: 14.5px; padding: 7px 18px; border-radius: 999px; }
 .r-manage h3 { text-align: center; font-size: 20px; color: #1e2a3a; margin: 12px 0; }
-.r-map { width: 100%; border-radius: 12px; display: block; background: #edf1ec; }
+/* ── Map card (real OSM embed or drawn fallback) ─────────────────── */
+.r-mapwrap { position: relative; }
+.r-map { width: 100%; height: 180px; border-radius: 12px; display: block; background: #edf1ec; }
+.r-mapframe { width: 100%; height: 180px; border: 0; border-radius: 12px; display: block; }
+.r-mapgo { position: absolute; inset: 0; border-radius: 12px; }
+.r-mapbadge { position: absolute; right: 10px; bottom: 10px; background: rgba(30,42,58,.78); color: #fff; font-size: 12px; font-weight: 700; padding: 5px 12px; border-radius: 999px; }
+
+/* ── Earnings / Profile ─────────────────────────────────── */
 .r-cust { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; font-size: 15.5px; }
 .r-cust a { color: #f2731d; font-weight: 700; text-decoration: none; }
 .r-items { margin-top: 10px; font-size: 14px; color: #444; }

@@ -59,7 +59,7 @@
       if (tab === "deliveries") await vDeliveries();
       else if (tab === "earnings") await vEarnings();
       else vProfile();
-    } catch (e) { DB.showErr(msg, e.message); }
+    } catch (e) { alert("Error: " + e.message); }
   }
 
   // ── Deliveries ─────────────────────────────────────────────────────────
@@ -102,6 +102,7 @@
     });
     const otpGo = document.getElementById("otpGo");
     if (otpGo) otpGo.onclick = () => verifyOtp(orders.find(o => o.id === managedId));
+    if (m && m.addr && m.addr.address_text) enhanceMap(m.addr.address_text, m.id);
   }
 
   function cardHtml(o) {
@@ -146,11 +147,14 @@
     }).join("");
     return '<div class="r-manage">' +
       '<span class="r-manage-pill">Now Managing • #' + shortId(o.id) + "</span><h3>Order Details</h3>" +
-      mapSvg() +
+      '<div class="r-mapwrap"><div id="rmap">' + mapSvg() + "</div>" +
+      '<a class="r-mapgo" href="' + navUrl + '" target="_blank" rel="noopener" aria-label="Open navigation">' +
+      '<span class="r-mapbadge">Open in Maps</span></a></div>' +
       '<div class="r-cust"><b>' + esc(c.name || "Customer") + "</b>" +
         (c.phone ? '<a href="tel:' + esc(c.phone) + '">' + esc(c.phone) + "</a>" : '<span class="muted">No phone</span>') + "</div>" +
       '<div class="r-row">' + pin("#f2731d") + "<span>" + esc(a.address_text || "") +
         (a.landmark ? " (" + esc(a.landmark) + ")" : "") + "</span></div>" +
+      (o.delivery_slot ? '<p class="muted" style="margin:8px 0 0">Delivery slot: <b>' + esc(o.delivery_slot) + "</b></p>" : "") +
       (items ? '<div class="r-items">' + items + "</div>" : "") +
       (o.notes ? '<div class="muted" style="margin-top:8px">' + esc(o.notes) + "</div>" : "") +
       (o.payment_method === "cod"
@@ -175,7 +179,7 @@
       if (!o.delivery_otp) {
         if (!confirm("Mark delivered? (No code on this order.)")) return; // pre-OTP orders
       } else {
-        if (code !== o.delivery_otp) { DB.showErr(msg, "Wrong code — ask the customer again."); inp.select(); return; }
+        if (code !== o.delivery_otp) { alert("Wrong code \u2014 ask the customer again."); inp.select(); return; }
         if (o.payment_method === "cod" && !confirm("Code OK. Collected " + DB.money(o.total) + "?")) return;
       }
       inp.disabled = true;
@@ -183,7 +187,7 @@
       if (error) throw error;
       DB.toast("Delivered");
       await vDeliveries();
-    } catch (e) { DB.showErr(msg, e.message); inp.disabled = false; }
+    } catch (e) { alert("Error: " + e.message); inp.disabled = false; }
   }
 
   async function advance(id, to, btn) {
@@ -193,7 +197,7 @@
       if (error) throw error;
       DB.toast("Status updated");
       await vDeliveries();
-    } catch (e) { DB.showErr(msg, e.message); btn.disabled = false; }
+    } catch (e) { alert("Error: " + e.message); btn.disabled = false; }
   }
 
   // ── First sign-in: replace the temporary password ──────────────────────
@@ -218,8 +222,31 @@
         const r = await DB.sb.from("profiles").update({ must_change_password: false }).eq("id", me.id);
         if (r.error) throw r.error;
         location.reload();
-      } catch (e) { DB.showErr(box, e.message); }
+      } catch (e) { alert("Error: " + e.message); }
     };
+  }
+
+  // ── Real map when the address can be located (free OSM, no key) ─────────
+  // Falls back to the drawn map for vague addresses or offline use.
+  const geoCache = {};
+  async function enhanceMap(addrText, orderId) {
+    const box = document.getElementById("rmap");
+    if (!box || !addrText || geoCache[addrText] === "fail") return;
+    if (geoCache[addrText]) { box.innerHTML = geoCache[addrText]; return; }
+    try {
+      const q = encodeURIComponent(addrText + ", Jaleswar, Odisha, India");
+      const r = await fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + q,
+        { headers: { Accept: "application/json" } });
+      const j = await r.json();
+      if (!j || !j[0]) { geoCache[addrText] = "fail"; return; }
+      const lat = parseFloat(j[0].lat), lon = parseFloat(j[0].lon), d = 0.008;
+      const html = '<iframe class="r-mapframe" loading="lazy" title="Map" src="https://www.openstreetmap.org/export/embed.html?bbox=' +
+        (lon - d) + "," + (lat - d) + "," + (lon + d) + "," + (lat + d) +
+        "&layer=mapnik&marker=" + lat + "," + lon + '"></iframe>';
+      geoCache[addrText] = html;
+      const live = document.getElementById("rmap");
+      if (live && managedId === orderId) live.innerHTML = html; // rider may have switched orders
+    } catch (e) { geoCache[addrText] = "fail"; }
   }
 
   // ── Earnings ───────────────────────────────────────────────────────────
@@ -258,7 +285,7 @@
       .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: "rider_id=eq." + me.id },
         function (p) {
           if (p.eventType === "INSERT") DB.toast("New delivery assigned");
-          refresh().catch(function (e) { DB.showErr(msg, e.message); });
+          refresh().catch(function (e) { alert("Error: " + e.message); });
         })
       .subscribe();
   }
