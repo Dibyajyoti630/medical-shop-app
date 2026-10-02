@@ -9,6 +9,18 @@
   // of — an existing prescription, uploading a new one, or a chemist-approval
   // request. Survives re-renders; validated against the fresh list each render.
   let rxPick = null;
+  let selSlot = "Today 4–6 PM";
+  let rxActive = false, rtCh = null;
+
+  // Live prescription status: when the chemist approves/rejects, the picker
+  // updates without a manual refresh.
+  function watchRx(uid) {
+    if (rtCh) return;
+    rtCh = DB.sb.channel("cust-rx-" + uid)
+      .on("postgres_changes", { event: "*", schema: "public", table: "prescriptions", filter: "customer_id=eq." + uid },
+        function () { if (rxActive) render(); })
+      .subscribe();
+  }
 
   async function render() {
     msg.innerHTML = "";
@@ -36,6 +48,7 @@
 
     let addrs = [];
     let rxs = [];
+    let reqRxs = [];
     let reqPending = false;
     const hasRx = items.some(m => m.rx_required);
     try {
@@ -46,19 +59,21 @@
       addrs = results[0].data || [];
       if (hasRx) {
         const all = (results[1] && results[1].data) || [];
-        // Approval requests are contact tickets only — never orderable, so
-        // they don't appear in the picker.
-        reqPending = all.some(r => r.status === "pending" && !r.image_url);
         rxs = all.filter(r => r.image_url);
+        reqRxs = all.filter(r => !r.image_url);
+        reqPending = reqRxs.some(r => r.status === "pending");
         if (rxPick && rxPick.t === "rx" && !rxs.some(r => r.id === rxPick.id)) rxPick = null;
+        if (rxPick && rxPick.t === "req" && !reqRxs.some(r => r.id === rxPick.id && r.status === "approved")) rxPick = null;
       }
     } catch (e) { return DB.showErr(msg, e.message); }
 
     const addr = addrs.length ? addrs[0] : null;
 
-    // Prescription picker: exactly one choice per order — an existing
-    // prescription, uploading a new one, or a chemist-approval request.
-    const curRxVal = !rxPick ? null : rxPick.t === "rx" ? "rx:" + rxPick.id : rxPick.t;
+    // Prescription picker: exactly one choice per order — a photo prescription,
+    // an accepted chemist approval, uploading a new one, or requesting approval.
+    // Requests track live below: waiting → accepted (orderable) / rejected.
+    const rxValOf = (p) => (!p ? null : p.t === "rx" ? "rx:" + p.id : p.t === "req" ? "req:" + p.id : p.t);
+    const curRxVal = rxValOf(rxPick);
     const rxOpt = function (val, title, sub, status) {
       return '<label class="rx-opt"><input type="radio" name="rxsel" value="' + val + '"' + (curRxVal === val ? " checked" : "") + ">" +
         '<span class="rx-opt-body"><b>' + title + "</b>" +
@@ -71,9 +86,22 @@
       "<div>" +
         rxs.map(r => rxOpt("rx:" + r.id, "Prescription",
           new Date(r.created_at).toLocaleString(), r.status)).join("") +
+        reqRxs.filter(r => r.status === "approved").map(r => rxOpt("req:" + r.id, "Chemist approval — accepted",
+          new Date(r.created_at).toLocaleString(), r.status)).join("") +
         rxOpt("upload", "Upload a new prescription", "Take a photo of your prescription") +
         rxOpt("request", "No prescription? Request chemist approval", "The chemist will call you to verify") +
       "</div>" +
+      (!reqRxs.length ? "" :
+        '<div style="margin-top:12px"><b style="font-size:14px">Chemist approval requests</b>' +
+        reqRxs.map(r => {
+          var head, sub;
+          if (r.status === "pending") { head = "Waiting for chemist approval"; sub = "The chemist will call you."; }
+          else if (r.status === "approved") { head = "Approved"; sub = "Choose it above to place your order."; }
+          else { head = "Rejected"; sub = "Please upload a prescription instead."; }
+          return '<div class="rx-req"><div style="flex:1"><b>' + head + "</b>" +
+            '<span class="muted">' + sub + " • " + new Date(r.created_at).toLocaleString() + "</span></div>" +
+            '<span class="status ' + r.status + '">' + esc(r.status) + "</span></div>";
+        }).join("") + "</div>") +
       '<div id="rxuploadbox"' + (curRxVal === "upload" ? "" : " hidden") + ' style="margin-top:4px">' +
         '<label for="rxfile">Photo of prescription</label>' +
         '<input type="file" id="rxfile" accept="image/*" aria-label="Upload prescription">' +
@@ -90,9 +118,8 @@
       '</div>' +
       '<div class="card"><h2 style="font-size:16px;margin-bottom:12px">Delivery Slot</h2>' +
         '<div class="chips" id="slots">' +
-          '<div class="chip active">🕒 Today 4–6 PM</div>' +
-          '<div class="chip">🕒 Today 6–8 PM</div>' +
-          '<div class="chip">🕒 Tomorrow 9–11 AM</div>' +
+          ["Today 4–6 PM", "Today 6–8 PM", "Tomorrow 9–11 AM"].map(s =>
+            '<div class="chip' + (s === selSlot ? " active" : "") + '" data-slot="' + s + '">🕒 ' + s + "</div>").join("") +
         '</div>' +
       '</div>' +
       '<h2 style="font-size:16px;margin:16px 4px 8px">Order Summary</h2>' +
@@ -119,11 +146,10 @@
       render();
     });
 
-    let selSlot = "Today 4–6 PM";
     wrap.querySelectorAll("#slots .chip").forEach(c => c.onclick = () => {
       wrap.querySelectorAll("#slots .chip").forEach(x => x.classList.remove("active"));
       c.classList.add("active");
-      selSlot = c.innerText.replace('🕒 ', '');
+      selSlot = c.dataset.slot;
     });
 
     document.getElementById("pay-upi").onclick = () => DB.toast("UPI payments coming soon");
@@ -131,7 +157,7 @@
     if (hasRx) {
       const rxValOf = () => (!rxPick ? null : rxPick.t === "rx" ? "rx:" + rxPick.id : rxPick.t);
       const syncRxBoxes = () => {
-        const cv = rxValOf();
+        const cv = rxValOf(rxPick);
         const up = document.getElementById("rxuploadbox"), rq = document.getElementById("rxreqbox");
         if (up) up.hidden = cv !== "upload";
         if (rq) rq.hidden = cv !== "request";
@@ -139,8 +165,9 @@
       // Radios can't be unchecked natively — tapping the selected one again clears it.
       wrap.querySelectorAll('input[name="rxsel"]').forEach(r => r.addEventListener("click", (e) => {
         const v = r.value;
-        if (rxValOf() === v) { e.preventDefault(); r.checked = false; rxPick = null; }
-        else rxPick = v === "upload" ? { t: "upload" } : v === "request" ? { t: "request" } : { t: "rx", id: v.slice(3) };
+        if (rxValOf(rxPick) === v) { e.preventDefault(); r.checked = false; rxPick = null; }
+        else rxPick = v === "upload" ? { t: "upload" } : v === "request" ? { t: "request" }
+          : v.indexOf("req:") === 0 ? { t: "req", id: v.slice(4) } : { t: "rx", id: v.slice(3) };
         msg.innerHTML = "";
         syncRxBoxes();
       }));
@@ -178,6 +205,9 @@
       };
     }
 
+    rxActive = hasRx;
+    if (hasRx) watchRx(me.id);
+
     document.getElementById("place").onclick = async () => {
       const btn = document.getElementById("place");
       if (btn.disabled) return;
@@ -189,7 +219,9 @@
           return;
         }
         if (!addr) return DB.showErr(msg, "Please add a delivery address in Profile.");
-        const selRx = hasRx && rxPick && rxPick.t === "rx" ? rxs.find(r => r.id === rxPick.id) : null;
+        const selRx = !hasRx || !rxPick ? null
+          : rxPick.t === "rx" ? rxs.find(r => r.id === rxPick.id)
+          : rxPick.t === "req" ? reqRxs.find(r => r.id === rxPick.id) : null;
         if (hasRx && !selRx) return DB.showErr(msg, !rxPick ? "Choose a prescription option for the Rx medicines in your cart."
           : rxPick.t === "upload" ? "Upload your prescription photo to continue."
           : "Send the chemist approval request to continue.");
