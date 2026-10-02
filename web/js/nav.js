@@ -7,6 +7,8 @@
   const tabs = [
     { href: "index.html", label: "Home", on: page === "index.html",
       svg: '<path d="M4 11l8-7 8 7"/><path d="M6 9.5V20h5v-6h2v6h5V9.5"/>' },
+    { href: "vet.html", label: "Vet", on: page === "vet.html",
+      svg: '<circle cx="8" cy="9.5" r="1.7"/><circle cx="12" cy="7" r="1.7"/><circle cx="16" cy="9.5" r="1.7"/><path d="M12 12c-2.9 0-5 2.3-5 4.3 0 1.4 1.1 2.4 2.5 2.4.9 0 1.6-.4 2.5-.4s1.6.4 2.5.4c1.4 0 2.5-1 2.5-2.4 0-2-2.1-4.3-5-4.3z"/>' },
     { href: "rxupload.html", label: "Upload Rx", on: page === "rxupload.html",
       svg: '<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4a3 3 0 016 0M9.5 12h5M9.5 15.5h3"/>' },
     { href: "cart.html", label: "Cart", on: page === "cart.html", badge: true,

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Veterinary Medicines — Jiban Jyoti Medical Store</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<header class="appbar">
+  <div class="brandrow">
+    <span class="logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6V3z" fill="#fff"/><path d="M4 20c4-1 8-4 11-9" stroke="#0ca26f" stroke-width="2.4" stroke-linecap="round"/></svg>
+    </span>
+    <div>
+      <div class="shopname">Jiban Jyoti Medical Store</div>
+      <button class="locbtn" id="locBtn">Uttarpada • Jaleswar, Odisha
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+    </div>
+  </div>
+  <button class="iconbtn" id="bellBtn" aria-label="Notifications">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#3c4742" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
+    <span class="dot-badge" aria-hidden="true"></span>
+  </button>
+</header>
+<main>
+  <div class="banner" aria-label="Veterinary">
+    <div class="slides">
+      <div class="slide">
+        <div class="t"><h3>Veterinary Medicines</h3><p>For cattle, dogs, cats &amp; poultry • Same-day delivery</p></div>
+        <svg class="art" viewBox="0 0 96 96" fill="none" aria-hidden="true"><circle cx="34" cy="34" r="8" stroke="#fff" stroke-width="4"/><circle cx="48" cy="26" r="8" stroke="#fff" stroke-width="4"/><circle cx="62" cy="34" r="8" stroke="#fff" stroke-width="4"/><path d="M48 46c-11 0-19 8-19 17 0 5 4 9 9 9 3 0 6-1.5 10-1.5s7 1.5 10 1.5c5 0 9-4 9-9 0-9-8-17-19-17z" stroke="#fff" stroke-width="4" stroke-linejoin="round"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="searchwrap">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#0ca26f" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+    <input id="q" type="search" placeholder="Search veterinary medicines…" aria-label="Search veterinary medicines">
+  </div>
+
+  <div class="sechead">
+    <h2>All Veterinary Medicines</h2>
+  </div>
+  <div class="pgrid" id="list"></div>
+  <div class="row" style="justify-content:center;margin-top:14px"><button class="btn secondary small" id="more">Load more</button></div>
+  <div id="msg" style="margin-top:12px"></div>
+</main>
+<nav class="bottomnav" id="bnav"></nav>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js"></script>
+<script src="js/db.js"></script>
+<script src="js/cart.js"></script>
+<script src="js/nav.js"></script>
+<script src="js/vet.js"></script>
+</body>
+</html>
