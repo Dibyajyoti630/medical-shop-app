@@ -1,52 +1,211 @@
-// Rider app: assigned deliveries, advance status along the route.
+// Rider app: today's deliveries, order detail, status stepper, earnings, profile.
+// Orange theme per the delivery mockup. Plain static JS, like the rest of the pilot.
 (function () {
   "use strict";
-  const list = document.getElementById("list"), msg = document.getElementById("msg");
+  const app = document.getElementById("app"), msg = document.getElementById("msg");
   const esc = DB.esc;
+  const SHOP = "Jiban Jyoti Medical Store";
   const NEXT = { assigned: "picked_up", picked_up: "out_for_delivery", out_for_delivery: "delivered" };
-  const LABEL = { assigned: "Mark picked up", picked_up: "Mark out for delivery", out_for_delivery: "Mark delivered" };
+  const STAGE = { assigned: "Ready for Pickup", picked_up: "Picked Up", out_for_delivery: "Out for Delivery", delivered: "Delivered" };
+  const FLOW = ["assigned", "picked_up", "out_for_delivery", "delivered"];
+  const STEPS = [
+    { to: "picked_up", label: "Mark Picked Up" },
+    { to: "out_for_delivery", label: "Out for Delivery" },
+    { to: "delivered", label: "Delivered" },
+  ];
+  let me = null, tab = "deliveries", managedId = null, orders = [], navBound = false;
 
-  async function render() {
+  function shortId(id) { return "ORD-" + String(id).replace(/-/g, "").slice(0, 6).toUpperCase(); }
+  function ago(ts) {
+    const s = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
+    if (s < 60) return "just now";
+    const m = Math.floor(s / 60); if (m < 60) return m + "m ago";
+    const h = Math.floor(m / 60); if (h < 24) return h + "h ago";
+    return Math.floor(h / 24) + "d ago";
+  }
+  function initials(n) { return (n || "R").trim().split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase(); }
+  function pin(color) {
+    return '<svg width="18" height="18" viewBox="0 0 24 24" fill="' + color + '"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>';
+  }
+  function plus(color) {
+    return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + color + '" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+  }
+
+  async function boot() {
     const chk = await Auth.requireRole("rider").catch(() => ({ ok: false, reason: "signin" }));
-    if (chk.reason === "signin") return Auth.gate(list, render);
-    if (!chk.ok) { list.innerHTML = '<div class="card">This account is not a rider.</div>'; return; }
-    document.getElementById("riderName").textContent = chk.profile.name || "";
+    if (chk.reason === "signin") { app.innerHTML = ""; return Auth.gate(app, boot); }
+    if (!chk.ok) {
+      app.innerHTML = '<div class="r-body"><div class="card r-empty">This account is not a rider.<br><span class="muted">Riders sign up in the app — the shop sets the rider role.</span></div></div>';
+      return;
+    }
+    me = chk.profile;
+    document.getElementById("rnav").hidden = false;
+    if (!navBound) {
+      navBound = true;
+      document.querySelectorAll("#rnav button").forEach(b => b.onclick = () => {
+        tab = b.dataset.tab;
+        document.querySelectorAll("#rnav button").forEach(x => x.classList.toggle("on", x === b));
+        refresh();
+      });
+    }
+    watchOrders();
+    await refresh();
+  }
+
+  async function refresh() {
+    msg.innerHTML = "";
     try {
-      const { data, error } = await DB.sb.from("orders").select(
-        "*,order_items(qty,unit_price,medicines(name))," +
-        "customer:profiles!orders_customer_id_fkey(name,phone)," +
-        "addresses(address_text,landmark)"
-      ).eq("rider_id", chk.profile.id)
-        .in("status", ["assigned", "picked_up", "out_for_delivery"])
-        .order("created_at");
-      if (error) throw error;
-      list.innerHTML = data.length ? data.map(card).join("") :
-        '<div class="card"><p class="muted">No deliveries assigned. All caught up. 🎉</p></div>';
-      list.querySelectorAll("[data-next]").forEach((b) => (b.onclick = async () => {
-        const { error: e2 } = await DB.sb.from("orders")
-          .update({ status: b.dataset.next }).eq("id", b.dataset.id);
-        if (e2) return DB.showErr(msg, e2.message);
-        render();
-      }));
+      if (tab === "deliveries") await vDeliveries();
+      else if (tab === "earnings") await vEarnings();
+      else vProfile();
     } catch (e) { DB.showErr(msg, e.message); }
   }
 
-  function card(o) {
-    return '<div class="card"><div class="row" style="justify-content:space-between">' +
-      "<b>#" + o.id.slice(0, 8) + "</b>" +
-      '<span class="status ' + o.status + '">' + o.status.replace(/_/g, " ") + "</span></div>" +
-      '<p style="margin-top:6px"><b>' + esc((o.customer && o.customer.name) || "Customer") + "</b>" +
-      (o.customer && o.customer.phone ? ' · <a href="tel:' + esc(o.customer.phone) + '">' + esc(o.customer.phone) + "</a>" : "") + "</p>" +
-      (o.addresses ? "<p>📍 " + esc(o.addresses.address_text) +
-        (o.addresses.landmark ? " (" + esc(o.addresses.landmark) + ")" : "") + "</p>" : "") +
-      '<div style="margin-top:8px">' + o.order_items.map((i) =>
-        "<div class='row' style='justify-content:space-between'><span>" + esc(i.medicines.name) +
-        " × " + i.qty + "</span></div>").join("") + "</div>" +
-      '<div class="row" style="justify-content:space-between;margin-top:8px"><span>Collect (' +
-      o.payment_method.toUpperCase() + ')</span><b class="price">' + DB.money(o.total) + "</b></div>" +
-      '<button class="btn" style="margin-top:10px" data-id="' + o.id + '" data-next="' + NEXT[o.status] + '">' +
-      LABEL[o.status] + "</button></div>";
+  // ── Deliveries ─────────────────────────────────────────────────────────
+  async function vDeliveries() {
+    const { data, error } = await DB.sb.from("orders")
+      .select("id,status,total,payment_method,delivery_slot,created_at,updated_at,notes," +
+        "customer:profiles!orders_customer_id_fkey(name,phone)," +
+        "addr:addresses!orders_address_id_fkey(label,address_text,landmark)," +
+        "order_items(qty,medicines(name))")
+      .eq("rider_id", me.id)
+      .in("status", ["assigned", "picked_up", "out_for_delivery"])
+      .order("created_at");
+    if (error) throw error;
+    orders = data || [];
+    if (!orders.some(o => o.id === managedId)) managedId = orders.length ? orders[0].id : null;
+    paintDeliveries();
   }
 
-  render();
+  function paintDeliveries() {
+    const m = orders.find(o => o.id === managedId);
+    app.innerHTML =
+      '<div class="r-head"><div class="r-head-top"><div class="r-cross">+</div><h1>My Deliveries - Today</h1>' +
+      '<div class="r-ava">' + esc(initials(me.name)) + '</div></div>' +
+      '<div class="r-rider">Rider: ' + esc(me.name || "Rider") + '</div>' +
+      '<div class="r-strip"><span>' + esc(SHOP) + ' • Rider App</span><span class="r-online">Online • Active</span></div></div>' +
+      '<div class="r-body"><h2>Active Deliveries (' + orders.length + ")</h2>" +
+      (orders.length ? orders.map(cardHtml).join("") : '<div class="r-empty">No deliveries assigned.<br>All caught up.</div>') +
+      (m ? manageHtml(m) : "") + "</div>";
+    app.querySelectorAll("[data-manage]").forEach(b => b.onclick = () => { managedId = b.dataset.manage; paintDeliveries(); });
+    app.querySelectorAll("[data-adv]").forEach(b => {
+      if (b.disabled) return;
+      b.onclick = () => advance(b.dataset.adv, b.dataset.to, b);
+    });
+  }
+
+  function cardHtml(o) {
+    const pay = (o.payment_method === "cod" ? "COD " : "Prepaid ") + DB.money(o.total);
+    const a = o.addr || {};
+    return '<button class="r-del' + (o.id === managedId ? " sel" : "") + '" data-manage="' + o.id + '">' +
+      '<span class="r-del-top"><b>#' + shortId(o.id) + "</b><span>•</span><b>" + esc(pay) + "</b>" +
+      '<span class="pill st-' + o.status + '">' + esc(STAGE[o.status] || o.status) + "</span></span>" +
+      '<span class="r-row">' + pin("#f2731d") + "<span>" + esc(a.address_text || "Address not available") + "</span></span>" +
+      '<span class="r-row shop">' + plus("#f2731d") + "<span>" + esc(SHOP) + " • Order placed " + ago(o.created_at) + "</span></span>" +
+      "</button>";
+  }
+
+  function mapSvg() {
+    const drop = (x, y, color, label) =>
+      '<g transform="translate(' + x + "," + y + ')">' +
+      '<path d="M0,0 C-8,-9 -12,-14 -12,-20 A12,12 0 1,1 12,-20 C12,-14 8,-9 0,0 Z" fill="' + color + '"/>' +
+      '<circle cx="0" cy="-20" r="4.5" fill="#fff"/>' +
+      '<text x="16" y="-14" font-size="12" font-weight="700" fill="#5b6472">' + label + "</text></g>";
+    return '<svg class="r-map" viewBox="0 0 300 140" role="img" aria-label="Route map">' +
+      '<rect width="300" height="140" fill="#edf1ec"/>' +
+      '<g stroke="#ffffff" stroke-width="11"><path d="M-10,42 H310"/><path d="M-10,96 H310"/><path d="M72,-10 V150"/><path d="M202,-10 V150"/></g>' +
+      '<g stroke="#dfe5df" stroke-width="3"><path d="M-10,68 H310"/><path d="M137,-10 V150"/><path d="M266,-10 V150"/></g>' +
+      '<path d="M48,108 C105,98 155,92 232,48" stroke="#f2731d" stroke-width="3.5" stroke-dasharray="8 6" fill="none" stroke-linecap="round"/>' +
+      drop(48, 108, "#f2731d", "Shop") + drop(232, 48, "#1e2a3a", "Customer") +
+      "</svg>";
+  }
+
+  function manageHtml(o) {
+    const c = o.customer || {}, a = o.addr || {};
+    const items = (o.order_items || []).map(i =>
+      "<div><span>" + esc((i.medicines && i.medicines.name) || "Item") + " × " + i.qty + "</span></div>").join("");
+    const navUrl = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(a.address_text || "");
+    const idx = FLOW.indexOf(o.status);
+    const steps = STEPS.map(s => {
+      const si = FLOW.indexOf(s.to);
+      const cls = si <= idx ? "done" : (NEXT[o.status] === s.to ? "next" : "");
+      const dis = cls === "next" ? "" : " disabled";
+      return '<button class="' + cls + '" data-adv="' + o.id + '" data-to="' + s.to + '"' + dis + ">" +
+        (cls === "done" ? "✓ " : "") + esc(s.label) + "</button>";
+    }).join("");
+    return '<div class="r-manage">' +
+      '<span class="r-manage-pill">Now Managing • #' + shortId(o.id) + "</span><h3>Order Details</h3>" +
+      mapSvg() +
+      '<div class="r-cust"><b>' + esc(c.name || "Customer") + "</b>" +
+        (c.phone ? '<a href="tel:' + esc(c.phone) + '">' + esc(c.phone) + "</a>" : '<span class="muted">No phone</span>') + "</div>" +
+      '<div class="r-row">' + pin("#f2731d") + "<span>" + esc(a.address_text || "") +
+        (a.landmark ? " (" + esc(a.landmark) + ")" : "") + "</span></div>" +
+      (items ? '<div class="r-items">' + items + "</div>" : "") +
+      (o.notes ? '<div class="muted" style="margin-top:8px">' + esc(o.notes) + "</div>" : "") +
+      (o.payment_method === "cod"
+        ? '<div class="r-collect"><span>Collect on delivery</span><b>' + DB.money(o.total) + "</b></div>" : "") +
+      '<div class="r-actions">' +
+        (c.phone ? '<a class="r-call" href="tel:' + esc(c.phone) + '">Call Customer</a>' : "") +
+        '<a class="r-navbtn" href="' + navUrl + '" target="_blank" rel="noopener">Start Navigation</a></div>' +
+      '<h3 style="text-align:left;margin:18px 0 10px">Update Status</h3>' +
+      '<div class="r-steps">' + steps + "</div></div>";
+  }
+
+  async function advance(id, to, btn) {
+    try {
+      if (to === "delivered") {
+        const o = orders.find(x => x.id === id);
+        const cod = o && o.payment_method === "cod" ? " Collected " + DB.money(o.total) + "?" : "";
+        if (!confirm("Mark delivered?" + cod)) return;
+      }
+      btn.disabled = true;
+      const { error } = await DB.sb.from("orders").update({ status: to }).eq("id", id);
+      if (error) throw error;
+      DB.toast("Status updated");
+      await vDeliveries();
+    } catch (e) { DB.showErr(msg, e.message); btn.disabled = false; }
+  }
+
+  // ── Earnings ───────────────────────────────────────────────────────────
+  async function vEarnings() {
+    const start = new Date(); start.setHours(0, 0, 0, 0);
+    const [t, all] = await Promise.all([
+      DB.sb.from("orders").select("total,payment_method").eq("rider_id", me.id).eq("status", "delivered").gte("updated_at", start.toISOString()),
+      DB.sb.from("orders").select("id", { count: "exact", head: true }).eq("rider_id", me.id).eq("status", "delivered"),
+    ]);
+    if (t.error) throw t.error;
+    const rows = t.data || [];
+    const cod = rows.filter(o => o.payment_method === "cod").reduce((a, o) => a + Number(o.total || 0), 0);
+    app.innerHTML = '<div class="r-body"><h2>Earnings</h2>' +
+      '<div class="r-earn"><h3>Today</h3>' +
+      '<div class="row"><span>Deliveries completed</span><b>' + rows.length + "</b></div>" +
+      '<div class="row"><span>Cash collected (COD)</span><b>' + DB.money(cod) + "</b></div></div>" +
+      '<div class="r-earn"><h3>All time</h3>' +
+      '<div class="row"><span>Deliveries completed</span><b>' + (all.count || 0) + "</b></div></div></div>";
+  }
+
+  // ── Profile ────────────────────────────────────────────────────────────
+  function vProfile() {
+    app.innerHTML = '<div class="r-body"><h2>Profile</h2><div class="r-earn r-prof">' +
+      '<div class="r-ava">' + esc(initials(me.name)) + "</div>" +
+      '<h3 style="font-size:20px;color:#1e2a3a;margin:6px 0 2px">' + esc(me.name || "Rider") + "</h3>" +
+      '<div class="muted">' + esc(me.phone || "") + "</div>" +
+      '<div style="margin-top:10px"><span class="pill st-picked_up">Rider</span></div>' +
+      '<div class="muted" style="margin-top:10px">' + esc(SHOP) + "</div>" +
+      '<button class="btn r-signout" id="riderOut">Sign out</button></div></div>';
+    document.getElementById("riderOut").onclick = async () => { await Auth.signOut(); location.reload(); };
+  }
+
+  // ── Realtime: new assignments arrive live ──────────────────────────────
+  function watchOrders() {
+    DB.sb.channel("rider-" + me.id)
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: "rider_id=eq." + me.id },
+        function (p) {
+          if (p.eventType === "INSERT") DB.toast("New delivery assigned");
+          refresh().catch(function (e) { DB.showErr(msg, e.message); });
+        })
+      .subscribe();
+  }
+
+  boot();
 })();

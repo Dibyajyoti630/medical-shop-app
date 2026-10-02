@@ -230,6 +230,11 @@
   }
 
   // ── shared order fetch (orders + customer names + item lines) ────────────
+  var riderList = [];
+  async function loadRiders() {
+    var r = await DB.sb.from("profiles").select("id,name,phone").eq("role", "rider").order("name");
+    riderList = r.data || [];
+  }
   async function enrichOrders(orders) {
     var ids = orders.map(function (o) { return o.id; });
     var cids = [...new Set(orders.map(function (o) { return o.customer_id; }))];
@@ -258,6 +263,12 @@
       ? '<button class="btn sm danger" data-act="cancel" data-id="' + o.id + '">Cancel</button>' : "";
     var itemsBtn = (o.status !== "delivered" && o.status !== "cancelled")
       ? '<button class="btn sm" data-act="items" data-id="' + o.id + '">Items</button>' : "";
+    var assignSel = (o.status === "preparing" || o.status === "confirmed") && riderList.length
+      ? '<select class="mini-input" data-assign="' + o.id + '" aria-label="Assign rider" style="max-width:130px">' +
+        '<option value="">Assign rider…</option>' +
+        riderList.map(function (rd) {
+          return '<option value="' + rd.id + '"' + (o.rider_id === rd.id ? " selected" : "") + ">" + esc(rd.name || rd.phone || "Rider") + "</option>";
+        }).join("") + "</select>" : "";
     var rxBtn = o.prescription_id
       ? '<button class="btn sm" data-act="rximg" data-id="' + o.prescription_id + '">View Rx</button>' : "";
     var itemsCell = (x.items[o.id] && x.items[o.id].length) ? itemSummary(x.items[o.id])
@@ -267,7 +278,7 @@
       "<td class='items-cell'>" + itemsCell + "</td>" +
       "<td><b>" + DB.money(o.total) + "</b></td>" +
       "<td>" + pill(o.status) + "</td>" +
-      '<td><div class="row-actions">' + adv + itemsBtn + rxBtn + cancel + "</div></td></tr>";
+      '<td><div class="row-actions">' + adv + itemsBtn + rxBtn + assignSel + cancel + "</div></td></tr>";
   }
 
   // ── Order items editor (price up a prescription order after the customer call)
@@ -378,10 +389,11 @@
         return '<button class="chip' + (f === orderFilter ? " active" : "") + '" data-act="filter" data-f="' + f + '">' +
           (f === "all" ? "All" : esc(LBL[f])) + "</button>";
       }).join("") + '</div><div id="itemEditor"></div><div class="card"><div id="olist"><div class="empty">Loading…</div></div></div>';
+    await loadRiders();
     await loadOrders();
   }
   async function loadOrders() {
-    var q = DB.sb.from("orders").select("id,customer_id,total,status,delivery_slot,prescription_id,created_at")
+    var q = DB.sb.from("orders").select("id,customer_id,total,status,delivery_slot,prescription_id,rider_id,created_at")
       .order("created_at", { ascending: false }).limit(100);
     if (orderFilter !== "all") q = q.eq("status", orderFilter);
     var r = await q; if (r.error) throw r.error;
@@ -395,7 +407,7 @@
   // Re-sync a single order row from the server (no full-list rebuild needed).
   async function refreshOrderRow(tr, id) {
     if (!tr) { await show(cur, true); return; }
-    var r = await DB.sb.from("orders").select("id,customer_id,total,status,delivery_slot,prescription_id,created_at").eq("id", id).single();
+    var r = await DB.sb.from("orders").select("id,customer_id,total,status,delivery_slot,prescription_id,rider_id,created_at").eq("id", id).single();
     if (r.error) throw r.error;
     var x = await enrichOrders([r.data]);
     var t = document.createElement("table"); t.innerHTML = "<tbody>" + orderRow(r.data, x) + "</tbody>";
@@ -766,6 +778,15 @@
     } catch (err) { DB.toast("Error: " + err.message); }
   }
   function onChange(e) {
+    var as = e.target.closest("[data-assign]");
+    if (as) {
+      if (!as.value) return;
+      DB.sb.from("orders").update({ rider_id: as.value, status: "assigned" }).eq("id", as.dataset.assign).then(function (r) {
+        DB.toast(r.error ? "Error: " + r.error.message : "Rider assigned");
+        if (!r.error) refreshOrderRow(as.closest("tr"), as.dataset.assign).catch(function () {});
+      });
+      return;
+    }
     var b = e.target.closest("[data-act='med-live']");
     if (b) {
       DB.sb.from("medicines").update({ is_active: b.checked }).eq("id", b.dataset.id).then(function (r) {
