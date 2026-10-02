@@ -36,6 +36,7 @@
 
     let addrs = [];
     let rxs = [];
+    let reqPending = false;
     const hasRx = items.some(m => m.rx_required);
     try {
       const p = [DB.sb.from("addresses").select("*").eq("customer_id", me.id).order("created_at")];
@@ -44,7 +45,11 @@
       const results = await Promise.all(p);
       addrs = results[0].data || [];
       if (hasRx) {
-        rxs = (results[1] && results[1].data) || [];
+        const all = (results[1] && results[1].data) || [];
+        // Approval requests are contact tickets only — never orderable, so
+        // they don't appear in the picker.
+        reqPending = all.some(r => r.status === "pending" && !r.image_url);
+        rxs = all.filter(r => r.image_url);
         if (rxPick && rxPick.t === "rx" && !rxs.some(r => r.id === rxPick.id)) rxPick = null;
       }
     } catch (e) { return DB.showErr(msg, e.message); }
@@ -64,7 +69,7 @@
       '<div class="card"><h2 style="font-size:16px;margin-bottom:4px">Prescription for Rx medicines</h2>' +
       '<p class="muted" style="margin-bottom:10px">Choose one option — required for every order with Rx medicines.</p>' +
       "<div>" +
-        rxs.map(r => rxOpt("rx:" + r.id, r.image_url ? "Prescription" : "Chemist approval",
+        rxs.map(r => rxOpt("rx:" + r.id, "Prescription",
           new Date(r.created_at).toLocaleString(), r.status)).join("") +
         rxOpt("upload", "Upload a new prescription", "Take a photo of your prescription") +
         rxOpt("request", "No prescription? Request chemist approval", "The chemist will call you to verify") +
@@ -162,13 +167,11 @@
       const reqBtn = document.getElementById("rxreqbtn");
       reqBtn.onclick = async () => {
         try {
-          const existing = rxs.find(r => r.status === "pending" && !r.image_url);
-          if (existing) { rxPick = { t: "rx", id: existing.id }; DB.toast("Using your pending approval request"); render(); return; }
+          if (reqPending) { DB.toast("Request already sent — the chemist will call you"); return; }
           reqBtn.disabled = true;
-          const { data, error } = await DB.sb.from("prescriptions")
-            .insert({ customer_id: me.id, image_url: null, status: "pending" }).select("id").single();
+          const { error } = await DB.sb.from("prescriptions")
+            .insert({ customer_id: me.id, image_url: null, status: "pending" });
           if (error) throw error;
-          rxPick = { t: "rx", id: data.id };
           DB.toast("Request sent — the chemist will call you");
           render();
         } catch (e) { DB.showErr(msg, e.message); reqBtn.disabled = false; }

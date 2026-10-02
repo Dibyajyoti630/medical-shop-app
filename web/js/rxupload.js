@@ -26,13 +26,19 @@
 
     const rxRow = r =>
       '<div class="row" style="justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #edf1ef">' +
-      '<div><b>' + (r.image_url ? 'Prescription' : 'Chemist approval request') + '</b><br><span class="muted">' +
+      '<div><b>Prescription</b><br><span class="muted">' +
       new Date(r.created_at).toLocaleString() + '</span><br>' +
       '<span class="status ' + r.status + '">' + esc(r.status) + '</span></div>' +
       ((r.status === "pending" || r.status === "approved") && !orderedRx[r.id]
         ? '<button class="btn secondary small" data-rxorder="' + r.id + '" data-st="' + r.status + '">Order</button>'
         : (orderedRx[r.id] ? '<span class="muted" style="font-size:13px">Ordered</span>' : '')) +
       '</div>';
+    // Approval requests are contact tickets only — no Order button.
+    const reqRow = r =>
+      '<div class="row" style="justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #edf1ef">' +
+      '<div><b>Chemist approval request</b><br><span class="muted">' +
+      new Date(r.created_at).toLocaleString() + '</span><br>' +
+      '<span class="status ' + r.status + '">' + esc(r.status) + '</span></div></div>';
     const photoRxs = rxs.filter(r => r.image_url);
     const reqRxs = rxs.filter(r => !r.image_url);
 
@@ -50,8 +56,8 @@
       '</div>' +
       (reqRxs.length
         ? '<div class="card"><h2 style="margin-bottom:8px">Chemist Approval Requests</h2>' +
-          reqRxs.map(rxRow).join("") +
-          '<p class="muted" style="margin-top:10px">Approved requests work like a prescription — tap <b>Order</b> or choose them at checkout for Rx medicines.</p></div>'
+          reqRxs.map(reqRow).join("") +
+          '<p class="muted" style="margin-top:10px">The chemist will call you to verify your request.</p></div>'
         : '');
 
     document.getElementById("rxbtn").onclick = async () => {
