@@ -10,6 +10,7 @@
   async function render() {
     const chk = await Auth.requireRole("customer").catch(() => ({ ok: false, reason: "signin" }));
     if (!chk.ok) return Auth.gate(list, render);
+    watchOrders(chk.profile.id);
     try {
       const { data, error } = await DB.sb.from("orders").select(
         "id,status,total,created_at,delivery_slot,notes,prescription_id,order_items(qty,unit_price,medicines(name,strength))"
@@ -35,5 +36,16 @@
       ).join("");
     } catch (e) { DB.showErr(msg, e.message); }
   }
+
+  // Order status flips live (e.g. chemist approves → Confirmed) without refresh.
+  let watchOn = false;
+  function watchOrders(uid) {
+    if (watchOn) return; watchOn = true;
+    DB.sb.channel("cust-orders-" + uid)
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: "customer_id=eq." + uid },
+        () => render())
+      .subscribe();
+  }
+
   render();
 })();

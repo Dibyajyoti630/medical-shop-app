@@ -48,7 +48,6 @@
 
     let addrs = [];
     let rxs = [];
-    let reqPending = false;
     const hasRx = items.some(m => m.rx_required);
     try {
       const p = [DB.sb.from("addresses").select("*").eq("customer_id", me.id).order("created_at")];
@@ -59,7 +58,6 @@
       if (hasRx) {
         const all = (results[1] && results[1].data) || [];
         rxs = all.filter(r => r.image_url); // requests are callback tickets — never orderable
-        reqPending = all.some(r => r.status === "pending" && !r.image_url);
         if (rxPick && rxPick.t === "rx" && !rxs.some(r => r.id === rxPick.id)) rxPick = null;
         if (rxPick && rxPick.t === "req") rxPick = null;
       }
@@ -84,14 +82,12 @@
         rxs.map(r => rxOpt("rx:" + r.id, "Prescription",
           new Date(r.created_at).toLocaleString(), r.status)).join("") +
         rxOpt("upload", "Upload a new prescription", "Take a photo of your prescription") +
-        rxOpt("request", "No prescription? Request chemist approval", "The chemist will call you to verify") +
+        rxOpt("request", "No prescription? Order with chemist approval", "Place the order — the chemist will call you to approve it") +
       "</div>" +
       '<div id="rxuploadbox"' + (curRxVal === "upload" ? "" : " hidden") + ' style="margin-top:4px">' +
         '<label for="rxfile">Photo of prescription</label>' +
         '<input type="file" id="rxfile" accept="image/*" aria-label="Upload prescription">' +
         '<button class="btn secondary small" id="rxupbtn" style="margin-top:8px">Upload &amp; attach</button></div>' +
-      '<div id="rxreqbox"' + (curRxVal === "request" ? "" : " hidden") + ' style="margin-top:4px">' +
-        '<button class="btn secondary small" id="rxreqbtn">Send approval request</button></div>' +
       "</div>";
 
     wrap.innerHTML =
@@ -141,10 +137,8 @@
     if (hasRx) {
       const rxValOf = () => (!rxPick ? null : rxPick.t === "rx" ? "rx:" + rxPick.id : rxPick.t);
       const syncRxBoxes = () => {
-        const cv = rxValOf(rxPick);
-        const up = document.getElementById("rxuploadbox"), rq = document.getElementById("rxreqbox");
-        if (up) up.hidden = cv !== "upload";
-        if (rq) rq.hidden = cv !== "request";
+        const up = document.getElementById("rxuploadbox");
+        if (up) up.hidden = rxValOf(rxPick) !== "upload";
       };
       // Radios can't be unchecked natively — tapping the selected one again clears it.
       wrap.querySelectorAll('input[name="rxsel"]').forEach(r => r.addEventListener("click", (e) => {
@@ -174,18 +168,6 @@
           render();
         } catch (e) { DB.showErr(msg, e.message); upBtn.disabled = false; upBtn.textContent = "Upload & attach"; }
       };
-      const reqBtn = document.getElementById("rxreqbtn");
-      reqBtn.onclick = async () => {
-        try {
-          if (reqPending) { DB.toast("Request already sent — the chemist will call you"); return; }
-          reqBtn.disabled = true;
-          const { error } = await DB.sb.from("prescriptions")
-            .insert({ customer_id: me.id, image_url: null, status: "pending" });
-          if (error) throw error;
-          DB.toast("Request sent — the chemist will call you");
-          render();
-        } catch (e) { DB.showErr(msg, e.message); reqBtn.disabled = false; }
-      };
     }
 
     rxActive = hasRx;
@@ -203,9 +185,9 @@
         }
         if (!addr) return DB.showErr(msg, "Please add a delivery address in Profile.");
         const selRx = hasRx && rxPick && rxPick.t === "rx" ? rxs.find(r => r.id === rxPick.id) : null;
-        if (hasRx && !selRx) return DB.showErr(msg, !rxPick ? "Choose a prescription option for the Rx medicines in your cart."
-          : rxPick.t === "upload" ? "Upload your prescription photo to continue."
-          : "Send the chemist approval request to continue.");
+        const reqApproval = hasRx && rxPick && rxPick.t === "request";
+        if (hasRx && !selRx && !reqApproval) return DB.showErr(msg, !rxPick ? "Choose a prescription option for the Rx medicines in your cart."
+          : "Upload your prescription photo to continue.");
         // Re-check live stock (page data may be stale if the shop just sold some).
         const fresh = await DB.sb.from("medicines").select("id,name,stock").in("id", items.map(m => m.id));
         if (fresh.error) throw fresh.error;
@@ -218,9 +200,10 @@
         const { data: order, error } = await DB.sb.from("orders").insert({
           customer_id: me.id, address_id: addr.id,
           prescription_id: selRx ? selRx.id : null,
-          status: selRx && selRx.status !== "approved" ? "awaiting_rx" : "placed",
+          status: reqApproval || (selRx && selRx.status !== "approved") ? "awaiting_rx" : "placed",
           subtotal: sub, delivery_fee: fee, total: tot,
           payment_method: "cod", delivery_slot: selSlot,
+          notes: reqApproval ? "No prescription — customer requested chemist approval over a call." : null,
         }).select("id").single();
         if (error) throw error;
         const lines = items.map(m => ({ order_id: order.id, medicine_id: m.id, qty: m.qty, unit_price: m.price }));
