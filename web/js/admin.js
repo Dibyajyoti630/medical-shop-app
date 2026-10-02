@@ -501,8 +501,28 @@
 
   // ── Delivery staff ───────────────────────────────────────────────────────
   async function vStaff() {
+    view.innerHTML = head("Delivery Staff", "Create rider logins here, or promote an existing customer. Revoking removes their rider access.") +
+      '<div class="card"><b>New rider account</b>' +
+      '<p class="muted" style="margin:6px 0">Fill the details, set a temporary password, and share the login with the rider. They sign in on the rider app with email + password.</p>' +
+      '<div class="row" style="flex-wrap:wrap;gap:8px">' +
+      '<input class="input" id="nrName" placeholder="Full name" autocomplete="off" style="max-width:190px">' +
+      '<input class="input" id="nrEmail" type="email" placeholder="Email" autocomplete="off" style="max-width:210px">' +
+      '<input class="input" id="nrPhone" placeholder="Phone" autocomplete="off" style="max-width:150px">' +
+      '<input class="input" id="nrPass" placeholder="Temp password" autocomplete="new-password" style="max-width:160px">' +
+      '<button class="btn sm secondary" data-act="gen-pass">Generate</button>' +
+      '<button class="btn sm" data-act="nr-create">Create rider</button></div>' +
+      '<div id="nrResult" style="margin-top:8px"></div></div>' +
+      '<div class="card"><b>Promote existing customer</b><p class="muted" style="margin:6px 0">Already signed up in the customer app? Find them and make them a rider.</p>' +
+      '<div class="row"><input class="input" id="staffSearch" placeholder="Search name or phone…" style="max-width:260px">' +
+      '<button class="btn sm" data-act="staff-search">Search</button></div><div id="staffResults" style="margin-top:8px"></div></div>' +
+      '<div class="card" id="staffTable"><div class="empty">Loading…</div></div>';
+    await loadStaffTable();
+  }
+
+  async function loadStaffTable() {
+    var box = document.getElementById("staffTable");
     var r = await DB.sb.from("profiles").select("id,name,phone,created_at").eq("role", "rider").order("created_at", { ascending: false });
-    if (r.error) throw r.error;
+    if (r.error) { box.innerHTML = '<div class="empty">Error: ' + esc(r.error.message) + "</div>"; return; }
     var riders = r.data || [], stats = {};
     if (riders.length) {
       var o = await DB.sb.from("orders").select("rider_id,status,updated_at")
@@ -514,19 +534,55 @@
         if (x.status === "delivered") { s.all++; if ((x.updated_at || "").slice(0, 10) === todayS) s.today++; }
       });
     }
-    view.innerHTML = head("Delivery Staff", "Promote a signed-up customer to rider, or remove a rider.") +
-      '<div class="card"><b>Add rider</b><p class="muted" style="margin:6px 0">The person signs up in the rider app first, then find them here and promote.</p>' +
-      '<div class="row"><input class="input" id="staffSearch" placeholder="Search name or phone…" style="max-width:260px">' +
-      '<button class="btn sm" data-act="staff-search">Search</button></div><div id="staffResults" style="margin-top:8px"></div></div>' +
-      '<div class="card">' + (riders.length
-        ? '<table class="grid"><tr><th>Name</th><th>Phone</th><th>Active</th><th>Today</th><th>All time</th><th></th></tr>' + riders.map(function (p) {
-            var s = stats[p.id] || { active: 0, today: 0, all: 0 };
-            return "<tr><td><b>" + esc(p.name || "—") + "</b></td>" +
-              "<td>" + (p.phone ? '<a href="tel:' + esc(p.phone) + '">' + esc(p.phone) + "</a>" : "—") + "</td>" +
-              "<td>" + s.active + "</td><td>" + s.today + "</td><td>" + s.all + "</td>" +
-              '<td><button class="btn sm danger" data-act="unmake-rider" data-id="' + p.id + '" data-name="' + esc(p.name || "rider") + '">Remove</button></td></tr>';
-          }).join("") + "</table>"
-        : '<div class="empty">No riders yet.</div>') + "</div>";
+    box.innerHTML = riders.length
+      ? '<table class="grid"><tr><th>Name</th><th>Phone</th><th>Active</th><th>Today</th><th>All time</th><th></th></tr>' + riders.map(function (p) {
+          var s = stats[p.id] || { active: 0, today: 0, all: 0 };
+          return "<tr><td><b>" + esc(p.name || "—") + "</b></td>" +
+            "<td>" + (p.phone ? '<a href="tel:' + esc(p.phone) + '">' + esc(p.phone) + "</a>" : "—") + "</td>" +
+            "<td>" + s.active + "</td><td>" + s.today + "</td><td>" + s.all + "</td>" +
+            '<td><button class="btn sm danger" data-act="unmake-rider" data-id="' + p.id + '" data-name="' + esc(p.name || "rider") + '">Revoke</button></td></tr>';
+        }).join("") + "</table>"
+      : '<div class="empty">No riders yet.</div>';
+  }
+
+  function genPass() {
+    var c = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789", p = "";
+    for (var i = 0; i < 10; i++) p += c[Math.floor(Math.random() * c.length)];
+    document.getElementById("nrPass").value = p;
+  }
+
+  // Creates the rider's login with a throwaway client (own session store) so
+  // the sign-up session never replaces the admin's session in this browser.
+  async function provisionRider() {
+    var g = function (id) { return (document.getElementById(id).value || "").trim(); };
+    var name = g("nrName"), email = g("nrEmail"), phone = g("nrPhone"), pw = document.getElementById("nrPass").value;
+    var box = document.getElementById("nrResult");
+    if (!name || !email || pw.length < 6) { box.innerHTML = '<span class="muted">Fill name, email and a password (min 6 chars).</span>'; return; }
+    box.innerHTML = '<span class="muted">Creating…</span>';
+    var tmp = null;
+    try {
+      tmp = window.supabase.createClient(APP_CONFIG.SUPABASE_URL, APP_CONFIG.SUPABASE_ANON_KEY,
+        { auth: { storageKey: "jj-rider-provision" } });
+      var s = await tmp.auth.signUp({ email: email, password: pw });
+      if (s.error) throw s.error;
+      var nu = s.data && s.data.user;
+      if (!nu) throw new Error("Sign-up returned no user.");
+      if (!s.data.session) throw new Error("Email confirmation is ON in Supabase Auth — turn it off, then retry.");
+      var ins = await tmp.from("profiles").insert({ id: nu.id, role: "customer", name: name, phone: phone || null });
+      if (ins.error) {
+        if (ins.error.code === "23505") throw new Error("This email already has an account — search below and use “Make rider”.");
+        throw ins.error;
+      }
+      var up = await DB.sb.from("profiles").update({ role: "rider" }).eq("id", nu.id);
+      if (up.error) throw up.error;
+      box.innerHTML = "<b>Rider created.</b> Share this login with " + esc(name) + ":<br>Email: <b>" + esc(email) + "</b><br>Temp password: <b>" + esc(pw) + "</b>";
+      ["nrName", "nrEmail", "nrPhone", "nrPass"].forEach(function (id) { document.getElementById(id).value = ""; });
+      await loadStaffTable();
+    } catch (e) {
+      box.innerHTML = '<span class="muted">Error: ' + esc(e.message) + "</span>";
+    } finally {
+      try { if (tmp) await tmp.auth.signOut(); } catch (e2) {}
+    }
   }
 
   // ── Delivery-staff actions (delegated) ───────────────────────────────────
@@ -557,10 +613,10 @@
       .eq("rider_id", id).in("status", ["assigned", "picked_up", "out_for_delivery"]);
     if (o.error) { DB.toast("Error: " + o.error.message); return; }
     if (o.count) { DB.toast(name + " has " + o.count + " active deliver" + (o.count === 1 ? "y" : "ies") + " — reassign first"); return; }
-    if (!confirm("Remove " + name + " as rider? They will lose access to the rider app.")) return;
+    if (!confirm("Revoke " + name + "'s rider access? They will no longer be able to use the rider app.")) return;
     var r = await DB.sb.from("profiles").update({ role: "customer" }).eq("id", id);
-    DB.toast(r.error ? "Error: " + r.error.message : "Rider removed");
-    if (!r.error) vStaff();
+    DB.toast(r.error ? "Error: " + r.error.message : "Rider access revoked");
+    if (!r.error) loadStaffTable();
   }
 
   // ── Reports ──────────────────────────────────────────────────────────────
@@ -696,6 +752,8 @@
       else if (act === "staff-search") { await staffSearch(); }
       else if (act === "make-rider") { await makeRider(id); }
       else if (act === "unmake-rider") { await unmakeRider(id, b.dataset.name || "rider"); }
+      else if (act === "nr-create") { await provisionRider(); }
+      else if (act === "gen-pass") { genPass(); }
       else if (act === "adv") {
         var to = b.dataset.to, tr = b.closest("tr"), pill = tr ? tr.querySelector(".pill") : null;
         if (pill) { pill.className = "pill " + to; pill.textContent = LBL[to]; }

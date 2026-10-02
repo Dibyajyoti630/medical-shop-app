@@ -47,19 +47,23 @@
   async function signOut() { await DB.sb.auth.signOut(); }
   // Renders a minimal email/password gate into `el`, then calls `next()`.
   // opts.showSignup (default true) — set false to hide "Create account" (e.g. admin page).
+  // opts.google (default true) — set false to hide the Google button.
+  // opts.note — helper text shown under the form when signup is hidden.
   function gate(el, next, opts) {
     var showSignup = !opts || opts.showSignup !== false;
+    var showGoogle = !opts || opts.google !== false;
+    var note = (opts && opts.note) || "Admin accounts are assigned — contact the shop owner.";
     el.innerHTML =
       '<div class="card"><h2 style="margin-bottom:8px">Sign in</h2>' +
       '<div id="amsg"></div>' +
-      '<button class="btn secondary" id="agoogle" style="width:100%;margin:6px 0 4px">Continue with Google</button>' +
-      '<div class="muted" style="text-align:center;margin:8px 0">or</div>' +
+      (showGoogle ? '<button class="btn secondary" id="agoogle" style="width:100%;margin:6px 0 4px">Continue with Google</button>' +
+      '<div class="muted" style="text-align:center;margin:8px 0">or</div>' : "") +
       '<label for="aemail">Email</label><input id="aemail" type="email" autocomplete="email">' +
       '<label for="apass">Password</label><input id="apass" type="password" autocomplete="current-password">' +
       '<div class="row" style="margin-top:14px">' +
       '<button class="btn" id="ago">Sign in</button>' +
       (showSignup ? '<button class="btn secondary" id="areg">Create account</button>' : '') + '</div>' +
-      (!showSignup ? '<p class="muted" style="margin-top:10px;text-align:center">Admin accounts are assigned — contact the shop owner.</p>' : '') +
+      (!showSignup ? '<p class="muted" style="margin-top:10px;text-align:center">' + DB.esc(note) + '</p>' : '') +
       '</div>';
     const go = async (fn) => {
       const box = document.getElementById("amsg");
@@ -70,8 +74,8 @@
     };
     document.getElementById("ago").onclick = () =>
       go(async (em, pw) => signIn(em.trim(), pw));
-    document.getElementById("agoogle").onclick = () =>
-      go(() => signInWithGoogle());
+    var gBtn = document.getElementById("agoogle");
+    if (gBtn) gBtn.onclick = () => go(() => signInWithGoogle());
     var regBtn = document.getElementById("areg");
     if (regBtn) regBtn.onclick = () =>
       go(async (em, pw) => { await signUp(em.trim(), pw); await signIn(em.trim(), pw); });

@@ -33,7 +33,7 @@
 
   async function boot() {
     const chk = await Auth.requireRole("rider").catch(() => ({ ok: false, reason: "signin" }));
-    if (chk.reason === "signin") { app.innerHTML = ""; return Auth.gate(app, boot); }
+    if (chk.reason === "signin") { app.innerHTML = ""; return Auth.gate(app, boot, { showSignup: false, google: false, note: "Rider accounts are created by the shop — ask for your login." }); }
     if (!chk.ok) {
       app.innerHTML = '<div class="r-body"><div class="card r-empty">This account is not a rider.<br><span class="muted">Riders sign up in the app — the shop sets the rider role.</span></div></div>';
       return;
