@@ -113,7 +113,12 @@
     document.getElementById("pay-upi").onclick = () => DB.toast("UPI payments coming soon");
 
     if (hasRx) {
-      wrap.querySelectorAll('input[name="rxsel"]').forEach(r => r.onchange = () => { selRxId = r.value; msg.innerHTML = ""; });
+      // Radios can't be unchecked natively — tapping the selected one again clears it.
+      wrap.querySelectorAll('input[name="rxsel"]').forEach(r => r.addEventListener("click", (e) => {
+        if (selRxId === r.value) { e.preventDefault(); r.checked = false; selRxId = null; }
+        else selRxId = r.value;
+        msg.innerHTML = "";
+      }));
       const upBtn = document.getElementById("rxupbtn");
       upBtn.onclick = async () => {
         const file = document.getElementById("rxfile").files[0];
