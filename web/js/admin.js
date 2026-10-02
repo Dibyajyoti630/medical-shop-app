@@ -67,7 +67,7 @@
   async function boot() {
     paintIcons(document);
     var r = await Auth.requireRole("admin");
-    if (r.reason === "signin") { Auth.gate(view, boot); return; }
+    if (r.reason === "signin") { Auth.gate(view, boot, { showSignup: false }); return; }
     if (r.reason === "forbidden") {
       var who = r.profile ? esc(r.profile.name || r.profile.phone || "this account") : "this account";
       view.innerHTML = '<div class="card empty">Signed in as <b>' + who + '</b> — this page is for shop admins only.<br>' +

@@ -46,7 +46,9 @@
   }
   async function signOut() { await DB.sb.auth.signOut(); }
   // Renders a minimal email/password gate into `el`, then calls `next()`.
-  function gate(el, next) {
+  // opts.showSignup (default true) — set false to hide "Create account" (e.g. admin page).
+  function gate(el, next, opts) {
+    var showSignup = !opts || opts.showSignup !== false;
     el.innerHTML =
       '<div class="card"><h2 style="margin-bottom:8px">Sign in</h2>' +
       '<div id="amsg"></div>' +
@@ -56,7 +58,8 @@
       '<label for="apass">Password</label><input id="apass" type="password" autocomplete="current-password">' +
       '<div class="row" style="margin-top:14px">' +
       '<button class="btn" id="ago">Sign in</button>' +
-      '<button class="btn secondary" id="areg">Create account</button></div>' +
+      (showSignup ? '<button class="btn secondary" id="areg">Create account</button>' : '') + '</div>' +
+      (!showSignup ? '<p class="muted" style="margin-top:10px;text-align:center">Admin accounts are assigned — contact the shop owner.</p>' : '') +
       '</div>';
     const go = async (fn) => {
       const box = document.getElementById("amsg");
@@ -69,7 +72,8 @@
       go(async (em, pw) => signIn(em.trim(), pw));
     document.getElementById("agoogle").onclick = () =>
       go(() => signInWithGoogle());
-    document.getElementById("areg").onclick = () =>
+    var regBtn = document.getElementById("areg");
+    if (regBtn) regBtn.onclick = () =>
       go(async (em, pw) => { await signUp(em.trim(), pw); await signIn(em.trim(), pw); });
   }
   window.Auth = { user, profile, requireRole, signIn, signUp, signInWithGoogle, signOut, gate };
