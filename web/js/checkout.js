@@ -4,7 +4,7 @@
   "use strict";
   const wrap = document.getElementById("wrap"), msg = document.getElementById("msg");
   const esc = DB.esc;
-  const FREE_ABOVE = 499, FEE = 30;
+  const FREE_ABOVE = 1000, FEE = 30;
   // Prescription choice for THIS order (per-order Rx requirement): exactly one
   // of — a photo prescription, uploading a new one, or requesting chemist
   // approval (a callback ticket; not orderable). Survives re-renders.

@@ -299,7 +299,7 @@
     var li = await DB.sb.from("order_items").select("qty,unit_price").eq("order_id", orderId);
     if (li.error) throw li.error;
     var sub = (li.data || []).reduce(function (s, l) { return s + Number(l.qty) * Number(l.unit_price); }, 0);
-    var fee = sub === 0 ? 0 : (sub >= 499 ? 0 : 30);
+    var fee = sub === 0 ? 0 : (sub >= 1000 ? 0 : 30);
     var u = await DB.sb.from("orders").update({ subtotal: sub, delivery_fee: fee, total: sub + fee }).eq("id", orderId);
     if (u.error) throw u.error;
   }
@@ -323,7 +323,7 @@
       '<table class="grid"><tr><th>Medicine</th><th>Qty</th><th>Price ₹</th><th></th><th></th></tr>' +
       (rows || '<tr><td colspan="5" class="muted">No items yet — add medicines below after the customer call.</td></tr>') + "</table>" +
       '<input class="searchbar" id="itemSearch" placeholder="Search medicine to add…" style="margin-top:10px"><div id="itemResults"></div>' +
-      '<p class="muted" style="margin-top:10px">Totals update automatically (free delivery above ₹499).</p></div>';
+      '<p class="muted" style="margin-top:10px">Totals update automatically (free delivery on ₹1,000+ orders).</p></div>';
     host.scrollIntoView({ block: "nearest" });
   }
 
@@ -841,7 +841,7 @@
               if (co.error) throw co.error;
             } else {
               var sub2 = keep.reduce(function (s, l) { return s + Number(l.qty) * Number(l.unit_price); }, 0);
-              var fee2 = sub2 >= 499 ? 0 : 30;
+              var fee2 = sub2 >= 1000 ? 0 : 30;
               var uo = await DB.sb.from("orders").update({ status: "placed", subtotal: sub2, delivery_fee: fee2, total: sub2 + fee2 }).eq("id", o.id);
               if (uo.error) throw uo.error;
             }
