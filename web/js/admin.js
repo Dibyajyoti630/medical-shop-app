@@ -503,12 +503,64 @@
   async function vStaff() {
     var r = await DB.sb.from("profiles").select("id,name,phone,created_at").eq("role", "rider").order("created_at", { ascending: false });
     if (r.error) throw r.error;
-    view.innerHTML = head("Delivery Staff", "Riders sign up in the app; their role is set to “rider” in Supabase → Table Editor → profiles.") +
-      '<div class="card">' + ((r.data && r.data.length)
-        ? '<table class="grid"><tr><th>Name</th><th>Phone</th><th>Since</th></tr>' + r.data.map(function (p) {
-            return "<tr><td><b>" + esc(p.name || "—") + "</b></td><td>" + esc(p.phone || "—") + "</td><td>" + fmtDate(p.created_at) + "</td></tr>";
+    var riders = r.data || [], stats = {};
+    if (riders.length) {
+      var o = await DB.sb.from("orders").select("rider_id,status,updated_at")
+        .in("rider_id", riders.map(function (x) { return x.id; }));
+      var todayS = new Date().toISOString().slice(0, 10);
+      (o.data || []).forEach(function (x) {
+        var s = stats[x.rider_id] || (stats[x.rider_id] = { active: 0, today: 0, all: 0 });
+        if (x.status === "assigned" || x.status === "picked_up" || x.status === "out_for_delivery") s.active++;
+        if (x.status === "delivered") { s.all++; if ((x.updated_at || "").slice(0, 10) === todayS) s.today++; }
+      });
+    }
+    view.innerHTML = head("Delivery Staff", "Promote a signed-up customer to rider, or remove a rider.") +
+      '<div class="card"><b>Add rider</b><p class="muted" style="margin:6px 0">The person signs up in the rider app first, then find them here and promote.</p>' +
+      '<div class="row"><input class="input" id="staffSearch" placeholder="Search name or phone…" style="max-width:260px">' +
+      '<button class="btn sm" data-act="staff-search">Search</button></div><div id="staffResults" style="margin-top:8px"></div></div>' +
+      '<div class="card">' + (riders.length
+        ? '<table class="grid"><tr><th>Name</th><th>Phone</th><th>Active</th><th>Today</th><th>All time</th><th></th></tr>' + riders.map(function (p) {
+            var s = stats[p.id] || { active: 0, today: 0, all: 0 };
+            return "<tr><td><b>" + esc(p.name || "—") + "</b></td>" +
+              "<td>" + (p.phone ? '<a href="tel:' + esc(p.phone) + '">' + esc(p.phone) + "</a>" : "—") + "</td>" +
+              "<td>" + s.active + "</td><td>" + s.today + "</td><td>" + s.all + "</td>" +
+              '<td><button class="btn sm danger" data-act="unmake-rider" data-id="' + p.id + '" data-name="' + esc(p.name || "rider") + '">Remove</button></td></tr>';
           }).join("") + "</table>"
         : '<div class="empty">No riders yet.</div>') + "</div>";
+  }
+
+  // ── Delivery-staff actions (delegated) ───────────────────────────────────
+  async function staffSearch() {
+    var q = (document.getElementById("staffSearch").value || "").trim().replace(/[^a-zA-Z0-9 +]/g, "");
+    var box = document.getElementById("staffResults");
+    if (!q) { box.innerHTML = '<span class="muted">Type a name or phone number.</span>'; return; }
+    box.innerHTML = '<span class="muted">Searching…</span>';
+    var r = await DB.sb.from("profiles").select("id,name,phone,role").eq("role", "customer")
+      .or("name.ilike.%" + q + "%,phone.ilike.%" + q + "%").limit(8);
+    if (r.error) { box.innerHTML = '<span class="muted">Error: ' + esc(r.error.message) + "</span>"; return; }
+    box.innerHTML = (r.data && r.data.length)
+      ? r.data.map(function (p) {
+          return '<div class="row" style="justify-content:space-between;padding:6px 0"><span><b>' + esc(p.name || "—") + "</b> · " + esc(p.phone || "no phone") + "</span>" +
+            '<button class="btn sm" data-act="make-rider" data-id="' + p.id + '">Make rider</button></div>';
+        }).join("")
+      : '<span class="muted">No matching customer. They need to sign up in the rider app first.</span>';
+  }
+
+  async function makeRider(id) {
+    var r = await DB.sb.from("profiles").update({ role: "rider" }).eq("id", id);
+    DB.toast(r.error ? "Error: " + r.error.message : "Rider added");
+    if (!r.error) vStaff();
+  }
+
+  async function unmakeRider(id, name) {
+    var o = await DB.sb.from("orders").select("id", { count: "exact", head: true })
+      .eq("rider_id", id).in("status", ["assigned", "picked_up", "out_for_delivery"]);
+    if (o.error) { DB.toast("Error: " + o.error.message); return; }
+    if (o.count) { DB.toast(name + " has " + o.count + " active deliver" + (o.count === 1 ? "y" : "ies") + " — reassign first"); return; }
+    if (!confirm("Remove " + name + " as rider? They will lose access to the rider app.")) return;
+    var r = await DB.sb.from("profiles").update({ role: "customer" }).eq("id", id);
+    DB.toast(r.error ? "Error: " + r.error.message : "Rider removed");
+    if (!r.error) vStaff();
   }
 
   // ── Reports ──────────────────────────────────────────────────────────────
@@ -641,6 +693,9 @@
       if (act === "nav") { medQ = b.dataset.q || ""; medLowOnly = b.dataset.low === "1"; await show(b.dataset.view); }
       else if (act === "filter") { orderFilter = b.dataset.f; await vOrders(); }
       else if (act === "low-toggle") { medLowOnly = !medLowOnly; await vMedicines(); }
+      else if (act === "staff-search") { await staffSearch(); }
+      else if (act === "make-rider") { await makeRider(id); }
+      else if (act === "unmake-rider") { await unmakeRider(id, b.dataset.name || "rider"); }
       else if (act === "adv") {
         var to = b.dataset.to, tr = b.closest("tr"), pill = tr ? tr.querySelector(".pill") : null;
         if (pill) { pill.className = "pill " + to; pill.textContent = LBL[to]; }
