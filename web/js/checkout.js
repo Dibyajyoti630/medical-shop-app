@@ -197,6 +197,7 @@
           if (left <= 0) return DB.showErr(msg, esc(m.name) + " just went out of stock. Remove it to continue.");
           if (m.qty > left) return DB.showErr(msg, "Only " + left + " left of " + esc(m.name) + ". Reduce quantity.");
         }
+        const deliveryOtp = String(Math.floor(1000 + Math.random() * 9000)); // 4-digit handoff code
         const { data: order, error } = await DB.sb.from("orders").insert({
           customer_id: me.id, address_id: addr.id,
           prescription_id: selRx ? selRx.id : null,
@@ -204,6 +205,7 @@
           subtotal: sub, delivery_fee: fee, total: tot,
           payment_method: "cod", delivery_slot: selSlot,
           notes: reqApproval ? "No prescription — customer requested chemist approval over a call." : null,
+          delivery_otp: deliveryOtp,
         }).select("id").single();
         if (error) throw error;
         const lines = items.map(m => ({ order_id: order.id, medicine_id: m.id, qty: m.qty, unit_price: m.price }));

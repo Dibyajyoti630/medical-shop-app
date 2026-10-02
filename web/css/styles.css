@@ -167,3 +167,5 @@ table.data th{color:var(--muted);font-weight:600}
 .rx-opt-body{flex:1;min-width:0}
 .rx-opt-body .muted{display:block;margin-top:2px}
 .rx-opt-body .status{margin-top:6px}
+.otp{background:#fff7f0;border:1.5px dashed #f2731d;border-radius:10px;padding:10px 12px;font-size:14.5px}
+.otp b{font-size:19px;letter-spacing:3px;color:#d95f10}

@@ -39,6 +39,7 @@
       return;
     }
     me = chk.profile;
+    if (me.must_change_password) return vNewPassword();
     document.getElementById("rnav").hidden = false;
     if (!navBound) {
       navBound = true;
@@ -64,7 +65,7 @@
   // ── Deliveries ─────────────────────────────────────────────────────────
   async function vDeliveries() {
     const { data, error } = await DB.sb.from("orders")
-      .select("id,status,total,payment_method,delivery_slot,created_at,updated_at,notes," +
+      .select("id,status,total,payment_method,delivery_slot,created_at,updated_at,notes,delivery_otp," +
         "customer:profiles!orders_customer_id_fkey(name,phone)," +
         "addr:addresses!orders_address_id_fkey(label,address_text,landmark)," +
         "order_items(qty,medicines(name))")
@@ -90,8 +91,17 @@
     app.querySelectorAll("[data-manage]").forEach(b => b.onclick = () => { managedId = b.dataset.manage; paintDeliveries(); });
     app.querySelectorAll("[data-adv]").forEach(b => {
       if (b.disabled) return;
-      b.onclick = () => advance(b.dataset.adv, b.dataset.to, b);
+      b.onclick = () => {
+        if (b.dataset.to === "delivered") { // handled through the OTP box
+          const box = document.getElementById("otpBox"), inp = document.getElementById("otpIn");
+          if (box) { box.hidden = false; inp.focus(); box.scrollIntoView({ block: "nearest" }); }
+          return;
+        }
+        advance(b.dataset.adv, b.dataset.to, b);
+      };
     });
+    const otpGo = document.getElementById("otpGo");
+    if (otpGo) otpGo.onclick = () => verifyOtp(orders.find(o => o.id === managedId));
   }
 
   function cardHtml(o) {
@@ -126,6 +136,7 @@
       "<div><span>" + esc((i.medicines && i.medicines.name) || "Item") + " × " + i.qty + "</span></div>").join("");
     const navUrl = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(a.address_text || "");
     const idx = FLOW.indexOf(o.status);
+    const needOtp = NEXT[o.status] === "delivered";
     const steps = STEPS.map(s => {
       const si = FLOW.indexOf(s.to);
       const cls = si <= idx ? "done" : (NEXT[o.status] === s.to ? "next" : "");
@@ -148,22 +159,67 @@
         (c.phone ? '<a class="r-call" href="tel:' + esc(c.phone) + '">Call Customer</a>' : "") +
         '<a class="r-navbtn" href="' + navUrl + '" target="_blank" rel="noopener">Start Navigation</a></div>' +
       '<h3 style="text-align:left;margin:18px 0 10px">Update Status</h3>' +
-      '<div class="r-steps">' + steps + "</div></div>";
+      '<div class="r-steps">' + steps + "</div>" +
+      (needOtp
+        ? '<div class="r-otp" id="otpBox" hidden><b>Delivery code</b>' +
+          '<p class="muted" style="margin:4px 0 0">Ask the customer for their 4-digit code, then complete the delivery.</p>' +
+          '<div class="row"><input class="input" id="otpIn" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="off">' +
+          '<button class="btn" id="otpGo">Verify & complete</button></div></div>'
+        : "") + "</div>";
+  }
+
+  async function verifyOtp(o) {
+    const inp = document.getElementById("otpIn");
+    const code = (inp.value || "").trim();
+    try {
+      if (!o.delivery_otp) {
+        if (!confirm("Mark delivered? (No code on this order.)")) return; // pre-OTP orders
+      } else {
+        if (code !== o.delivery_otp) { DB.showErr(msg, "Wrong code — ask the customer again."); inp.select(); return; }
+        if (o.payment_method === "cod" && !confirm("Code OK. Collected " + DB.money(o.total) + "?")) return;
+      }
+      inp.disabled = true;
+      const { error } = await DB.sb.from("orders").update({ status: "delivered" }).eq("id", o.id);
+      if (error) throw error;
+      DB.toast("Delivered");
+      await vDeliveries();
+    } catch (e) { DB.showErr(msg, e.message); inp.disabled = false; }
   }
 
   async function advance(id, to, btn) {
     try {
-      if (to === "delivered") {
-        const o = orders.find(x => x.id === id);
-        const cod = o && o.payment_method === "cod" ? " Collected " + DB.money(o.total) + "?" : "";
-        if (!confirm("Mark delivered?" + cod)) return;
-      }
       btn.disabled = true;
       const { error } = await DB.sb.from("orders").update({ status: to }).eq("id", id);
       if (error) throw error;
       DB.toast("Status updated");
       await vDeliveries();
     } catch (e) { DB.showErr(msg, e.message); btn.disabled = false; }
+  }
+
+  // ── First sign-in: replace the temporary password ──────────────────────
+  function vNewPassword() {
+    document.getElementById("rnav").hidden = true;
+    app.innerHTML = '<div class="r-body"><div class="r-earn" style="margin-top:24px">' +
+      "<h3 style='font-size:20px;color:#1e2a3a'>Set your password</h3>" +
+      '<p class="muted">First sign-in — choose a new password to replace the temporary one.</p>' +
+      '<div id="pwmsg"></div>' +
+      '<label for="npw1">New password</label><input class="input" id="npw1" type="password" autocomplete="new-password">' +
+      '<label for="npw2">Confirm password</label><input class="input" id="npw2" type="password" autocomplete="new-password">' +
+      '<button class="btn" id="npwGo" style="width:100%;margin-top:12px">Save password</button>' +
+      "</div></div>";
+    document.getElementById("npwGo").onclick = async () => {
+      const box = document.getElementById("pwmsg");
+      const p1 = document.getElementById("npw1").value, p2 = document.getElementById("npw2").value;
+      try {
+        if (p1.length < 6) throw new Error("Password must be at least 6 characters.");
+        if (p1 !== p2) throw new Error("Passwords don't match.");
+        const { error } = await DB.sb.auth.updateUser({ password: p1 });
+        if (error) throw error;
+        const r = await DB.sb.from("profiles").update({ must_change_password: false }).eq("id", me.id);
+        if (r.error) throw r.error;
+        location.reload();
+      } catch (e) { DB.showErr(box, e.message); }
+    };
   }
 
   // ── Earnings ───────────────────────────────────────────────────────────
