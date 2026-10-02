@@ -57,8 +57,9 @@
       '<p class="muted" style="margin-bottom:10px">Choose which prescription this order uses — required for every order with Rx medicines.</p>' +
       '<div id="rxlist">' + (rxs.map(r =>
         '<label class="rx-opt"><input type="radio" name="rxsel" value="' + r.id + '"' + (selRxId === r.id ? ' checked' : '') + '>' +
-        '<div style="flex:1"><b>' + (r.image_url ? 'Prescription' : 'Chemist approval') + '</b> <span class="muted">' +
-        new Date(r.created_at).toLocaleString() + '</span><br><span class="status ' + r.status + '">' + esc(r.status) + '</span></div></label>'
+        '<span class="rx-opt-body"><b>' + (r.image_url ? 'Prescription' : 'Chemist approval') + '</b>' +
+        '<span class="muted">' + new Date(r.created_at).toLocaleString() + '</span>' +
+        '<span class="status ' + r.status + '">' + esc(r.status) + '</span></span></label>'
       ).join('') || '<p class="muted">No prescriptions yet — upload one below.</p>') + '</div>' +
       '<div style="margin-top:12px"><label for="rxfile">Upload new prescription</label>' +
       '<input type="file" id="rxfile" accept="image/*" aria-label="Upload prescription">' +
