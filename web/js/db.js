@@ -60,5 +60,30 @@
     setTimeout(() => d.remove(), 1800);
   }
 
-  window.DB = { sb, PAGE, medicines, categories, forms, medImage, money, esc, showErr, toast };
+  // Downscale + JPEG-compress an image file in-browser (max 1600px, ~0.7
+  // quality) so prescription uploads work on slow networks. Falls back to the
+  // original file if it can't be read (e.g. HEIC).
+  function compressImage(file) {
+    return new Promise((resolve) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        try {
+          const MAX = 1600;
+          const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+          const w = Math.max(1, Math.round(img.width * scale));
+          const h = Math.max(1, Math.round(img.height * scale));
+          const c = document.createElement("canvas");
+          c.width = w; c.height = h;
+          c.getContext("2d").drawImage(img, 0, 0, w, h);
+          c.toBlob((b) => resolve(b || file), "image/jpeg", 0.7);
+        } catch (e) { resolve(file); }
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+      img.src = url;
+    });
+  }
+
+  window.DB = { sb, PAGE, medicines, categories, forms, medImage, money, esc, showErr, toast, compressImage };
 })();

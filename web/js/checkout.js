@@ -5,6 +5,9 @@
   const wrap = document.getElementById("wrap"), msg = document.getElementById("msg");
   const esc = DB.esc;
   const FREE_ABOVE = 499, FEE = 30;
+  // Prescription explicitly chosen for THIS order (per-order Rx requirement).
+  // Survives re-renders (qty changes); validated against the fresh list each render.
+  let selRxId = null;
 
   async function render() {
     msg.innerHTML = "";
@@ -31,27 +34,38 @@
     const me = chk.profile;
 
     let addrs = [];
-    let rxStatusHtml = '', rx = null, rxApproved = false;
+    let rxs = [];
     const hasRx = items.some(m => m.rx_required);
     try {
       const p = [DB.sb.from("addresses").select("*").eq("customer_id", me.id).order("created_at")];
-      if (hasRx) p.push(DB.sb.from("prescriptions").select("id,status").eq("customer_id", me.id)
+      if (hasRx) p.push(DB.sb.from("prescriptions").select("id,status,image_url,created_at").eq("customer_id", me.id)
         .in("status", ["pending", "approved"]).order("created_at", { ascending: false }).limit(10));
       const results = await Promise.all(p);
       addrs = results[0].data || [];
       if (hasRx) {
-        const rxs = (results[1] && results[1].data) || [];
-        rx = rxs.find(r => r.status === "approved") || rxs.find(r => r.status === "pending") || null;
-        rxApproved = !!(rx && rx.status === "approved");
-        if (rxApproved) rxStatusHtml = '<div class="pill rx-ok">✓ Prescription attached</div>';
-        else if (rx) rxStatusHtml = '<div class="pill rx-wait">Prescription under review — you can order now, it will be confirmed after the pharmacist approves it.</div>';
-        else rxStatusHtml = '<div class="card err">Order contains Rx medicines. Prescription required to place order.</div>';
+        rxs = (results[1] && results[1].data) || [];
+        if (selRxId && !rxs.some(r => r.id === selRxId)) selRxId = null;
       }
     } catch (e) { return DB.showErr(msg, e.message); }
 
     const addr = addrs.length ? addrs[0] : null;
 
-    wrap.innerHTML = rxStatusHtml +
+    // Prescription picker: one explicit choice per order. Upload + chemist-
+    // approval request live right beside the ordered medicines.
+    const rxSec = !hasRx ? '' :
+      '<div class="card"><h2 style="font-size:16px;margin-bottom:4px">Prescription for Rx medicines</h2>' +
+      '<p class="muted" style="margin-bottom:10px">Choose which prescription this order uses — required for every order with Rx medicines.</p>' +
+      '<div id="rxlist">' + (rxs.map(r =>
+        '<label class="rx-opt"><input type="radio" name="rxsel" value="' + r.id + '"' + (selRxId === r.id ? ' checked' : '') + '>' +
+        '<div style="flex:1"><b>' + (r.image_url ? 'Prescription' : 'Chemist approval') + '</b> <span class="muted">' +
+        new Date(r.created_at).toLocaleString() + '</span><br><span class="status ' + r.status + '">' + esc(r.status) + '</span></div></label>'
+      ).join('') || '<p class="muted">No prescriptions yet — upload one below.</p>') + '</div>' +
+      '<div style="margin-top:12px"><label for="rxfile">Upload new prescription</label>' +
+      '<input type="file" id="rxfile" accept="image/*" aria-label="Upload prescription">' +
+      '<button class="btn secondary small" id="rxupbtn" style="margin-top:8px">Upload &amp; attach</button></div>' +
+      '<button class="btn secondary small" id="rxreqbtn" style="margin-top:8px">No prescription? Request chemist approval</button></div>';
+
+    wrap.innerHTML =
       '<div class="card">' +
         (addr
           ? '<div class="row" style="align-items:flex-start"><div class="circle-icon" style="background:transparent;color:var(--brand);margin-top:-4px">📍</div><div style="flex:1"><b>' + esc(addr.label) + '</b><div class="muted">' + esc(addr.address_text) + '</div></div><a href="account.html" class="btn secondary small" style="color:var(--brand);border:1px solid var(--brand);background:transparent;padding:6px 12px;height:auto">Change</a></div>'
@@ -66,9 +80,10 @@
       '</div>' +
       '<h2 style="font-size:16px;margin:16px 4px 8px">Order Summary</h2>' +
       items.map(m =>
-        '<div class="card row" style="align-items:flex-start"><div class="circle-icon">💊</div><div style="flex:1"><b>' + esc(m.name) + '</b><div class="muted">' + esc(m.strength) + (m.pack_size ? ' • ' + esc(m.pack_size) : '') + '</div></div>' +
+        '<div class="card row" style="align-items:flex-start"><div class="circle-icon">💊</div><div style="flex:1"><b>' + esc(m.name) + '</b>' + (m.rx_required ? '<span class="rx-tag">Rx</span>' : '') + '<div class="muted">' + esc(m.strength) + (m.pack_size ? ' • ' + esc(m.pack_size) : '') + '</div></div>' +
         '<div style="text-align:right"><div class="stepper" style="justify-content:flex-end"><button data-a="-1" data-id="' + m.id + '">−</button><b class="sqty">' + m.qty + '</b><button data-a="1" data-id="' + m.id + '">+</button></div><b style="display:block;margin-top:8px">' + DB.money(m.price * m.qty) + '</b></div></div>'
       ).join('') +
+      rxSec +
       '<div class="card">' +
         '<div class="row" style="justify-content:space-between;margin-bottom:8px"><span>Subtotal</span><b>' + DB.money(sub) + '</b></div>' +
         '<div class="row" style="justify-content:space-between;margin-bottom:8px"><span>Delivery Fee</span><b' + (fee === 0 ? ' style="color:var(--brand)"' : '') + '>' + (fee === 0 ? 'FREE' : DB.money(fee)) + '</b></div>' +
@@ -96,6 +111,45 @@
 
     document.getElementById("pay-upi").onclick = () => DB.toast("UPI payments coming soon");
 
+    if (hasRx) {
+      wrap.querySelectorAll('input[name="rxsel"]').forEach(r => r.onchange = () => { selRxId = r.value; msg.innerHTML = ""; });
+      const upBtn = document.getElementById("rxupbtn");
+      upBtn.onclick = async () => {
+        const file = document.getElementById("rxfile").files[0];
+        if (!file) return DB.showErr(msg, "Select a photo first.");
+        upBtn.disabled = true;
+        try {
+          upBtn.textContent = "Uploading…";
+          const small = await DB.compressImage(file);
+          const path = me.id + "/" + Date.now() + ".jpg";
+          const { error: upErr } = await DB.sb.storage.from("prescriptions")
+            .upload(path, small, { contentType: "image/jpeg" });
+          if (upErr) throw upErr;
+          const { data: ins, error: insErr } = await DB.sb.from("prescriptions")
+            .insert({ customer_id: me.id, image_url: path }).select("id").single();
+          if (insErr) throw insErr;
+          selRxId = ins.id;
+          DB.toast("Prescription uploaded — attached to this order");
+          render();
+        } catch (e) { DB.showErr(msg, e.message); upBtn.disabled = false; upBtn.textContent = "Upload & attach"; }
+      };
+      const reqBtn = document.getElementById("rxreqbtn");
+      reqBtn.onclick = async () => {
+        try {
+          const existing = rxs.find(r => r.status === "pending" && !r.image_url);
+          if (existing) { selRxId = existing.id; DB.toast("Using your pending approval request"); render(); return; }
+          if (!confirm("No prescription? The chemist will call you to verify, then approve your request.")) return;
+          reqBtn.disabled = true;
+          const { data, error } = await DB.sb.from("prescriptions")
+            .insert({ customer_id: me.id, image_url: null, status: "pending" }).select("id").single();
+          if (error) throw error;
+          selRxId = data.id;
+          DB.toast("Request sent — the chemist will call you");
+          render();
+        } catch (e) { DB.showErr(msg, e.message); reqBtn.disabled = false; }
+      };
+    }
+
     document.getElementById("place").onclick = async () => {
       const btn = document.getElementById("place");
       if (btn.disabled) return;
@@ -107,7 +161,8 @@
           return;
         }
         if (!addr) return DB.showErr(msg, "Please add a delivery address in Profile.");
-        if (hasRx && !rx) return DB.showErr(msg, "Prescription required. Please upload in Account.");
+        const selRx = hasRx ? rxs.find(r => r.id === selRxId) : null;
+        if (hasRx && !selRx) return DB.showErr(msg, "Select a prescription for the Rx medicines in your cart.");
         // Re-check live stock (page data may be stale if the shop just sold some).
         const fresh = await DB.sb.from("medicines").select("id,name,stock").in("id", items.map(m => m.id));
         if (fresh.error) throw fresh.error;
@@ -119,8 +174,8 @@
         }
         const { data: order, error } = await DB.sb.from("orders").insert({
           customer_id: me.id, address_id: addr.id,
-          prescription_id: hasRx && rx ? rx.id : null,
-          status: hasRx && rx && !rxApproved ? "awaiting_rx" : "placed",
+          prescription_id: selRx ? selRx.id : null,
+          status: selRx && selRx.status !== "approved" ? "awaiting_rx" : "placed",
           subtotal: sub, delivery_fee: fee, total: tot,
           payment_method: "cod", delivery_slot: selSlot,
         }).select("id").single();

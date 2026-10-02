@@ -161,8 +161,8 @@
         remoteChanged("orders");
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders" }, function () { remoteChanged("orders"); })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "prescriptions" }, function () {
-        DB.toast("New prescription uploaded");
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "prescriptions" }, function (p) {
+        DB.toast(p.new && p.new.image_url ? "New prescription uploaded" : "Customer requested Rx approval");
         remoteChanged("rx");
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "medicines" }, function () { remoteChanged("medicines"); })
@@ -207,14 +207,14 @@
     d.hidden = false;
     try {
       var res = await Promise.all([
-        DB.sb.from("prescriptions").select("id,created_at").eq("status", "pending").order("created_at", { ascending: false }).limit(5),
+        DB.sb.from("prescriptions").select("id,created_at,image_url").eq("status", "pending").order("created_at", { ascending: false }).limit(5),
         DB.sb.from("orders").select("id,total,status,created_at").in("status", ["placed", "awaiting_rx"]).order("created_at", { ascending: false }).limit(5),
         DB.sb.from("medicines").select("id,name,stock").eq("is_active", true).lte("stock", LOW_STOCK).order("stock").limit(5),
       ]);
       if (res[0].error) throw res[0].error; if (res[1].error) throw res[1].error; if (res[2].error) throw res[2].error;
       var items = [];
       (res[0].data || []).forEach(function (p) {
-        items.push({ t: "Prescription awaiting review", s: timeAgo(p.created_at), v: "rx" });
+        items.push({ t: p.image_url ? "Prescription awaiting review" : "Rx approval requested", s: timeAgo(p.created_at), v: "rx" });
       });
       (res[1].data || []).forEach(function (o) {
         items.push({ t: (o.status === "awaiting_rx" ? "Rx order waiting" : "New order") + " " + shortId(o.id) + " • " + DB.money(o.total), s: timeAgo(o.created_at), v: "orders" });
@@ -459,16 +459,22 @@
     var pend = rows.filter(function (x) { return x.status === "pending"; });
     var done = rows.filter(function (x) { return x.status !== "pending"; });
     for (var i = 0; i < pend.length; i++) {
+      if (!pend[i].image_url) continue; // approval request — no image to sign
       var s = await DB.sb.storage.from("prescriptions").createSignedUrl(pend[i].image_url, 600);
       pend[i].url = s.data ? s.data.signedUrl : null;
     }
     var card = function (x, actions) {
       var c = names[x.customer_id] || {};
-      return '<div class="rx-card">' +
-        (x.url ? '<img src="' + x.url + '" data-act="rx-view" data-url="' + esc(x.url) + '" alt="prescription">' : '<div class="empty">no image</div>') +
+      var imgHtml = x.url
+        ? '<img src="' + x.url + '" data-act="rx-view" data-url="' + esc(x.url) + '" alt="prescription">'
+        : (x.image_url
+          ? '<div class="empty">no image</div>'
+          : '<div class="empty">Approval requested — no prescription photo.<br>Call the customer to verify, then approve.</div>');
+      return '<div class="rx-card">' + imgHtml +
         '<div class="rx-meta"><b>' + esc(c.name || "Customer") + "</b>" +
+        (!x.image_url ? ' <span class="status pending">approval request</span>' : "") +
         (c.phone ? "<small>" + esc(c.phone) + "</small>" : "") +
-        "<small>Uploaded " + ago(x.created_at) + "</small>" +
+        "<small>" + (x.image_url ? "Uploaded " : "Requested ") + ago(x.created_at) + "</small>" +
         (actions ? '<div class="row-actions" style="margin-top:8px">' +
           '<button class="btn sm" data-act="rx-ok" data-id="' + x.id + '">Approve</button>' +
           '<button class="btn sm danger" data-act="rx-no" data-id="' + x.id + '">Reject</button></div>'

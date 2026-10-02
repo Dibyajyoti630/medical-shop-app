@@ -5,29 +5,6 @@
   const wrap = document.getElementById("wrap"), msg = document.getElementById("msg");
   const esc = DB.esc;
 
-  // Downscale + JPEG-compress. Falls back to the original file if it can't be read (e.g. HEIC).
-  function compressImage(file) {
-    return new Promise((resolve) => {
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload = () => {
-        URL.revokeObjectURL(url);
-        try {
-          const MAX = 1600;
-          const scale = Math.min(1, MAX / Math.max(img.width, img.height));
-          const w = Math.max(1, Math.round(img.width * scale));
-          const h = Math.max(1, Math.round(img.height * scale));
-          const c = document.createElement("canvas");
-          c.width = w; c.height = h;
-          c.getContext("2d").drawImage(img, 0, 0, w, h);
-          c.toBlob((b) => resolve(b || file), "image/jpeg", 0.7);
-        } catch (e) { resolve(file); }
-      };
-      img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
-      img.src = url;
-    });
-  }
-
   async function render() {
     const chk = await Auth.requireRole("customer").catch(() => ({ ok: false, reason: "signin" }));
     if (!chk.ok) return Auth.gate(wrap, render);
@@ -58,7 +35,7 @@
       '<div class="card"><h2 style="margin-bottom:8px">My Prescriptions</h2>' +
       (rxs.map(r =>
         '<div class="row" style="justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #edf1ef">' +
-        '<div><b>Prescription</b><br><span class="muted">' +
+        '<div><b>' + (r.image_url ? 'Prescription' : 'Chemist approval request') + '</b><br><span class="muted">' +
         new Date(r.created_at).toLocaleString() + '</span><br>' +
         '<span class="status ' + r.status + '">' + esc(r.status) + '</span></div>' +
         ((r.status === "pending" || r.status === "approved") && !orderedRx[r.id]
@@ -76,7 +53,7 @@
       btn.disabled = true;
       try {
         btn.textContent = "Compressing…";
-        const small = await compressImage(file);
+        const small = await DB.compressImage(file);
         btn.textContent = "Uploading…";
         const path = me.id + "/" + Date.now() + ".jpg";
         const { error: upErr } = await DB.sb.storage.from("prescriptions")
