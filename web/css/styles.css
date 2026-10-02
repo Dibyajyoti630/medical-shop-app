@@ -167,5 +167,3 @@ table.data th{color:var(--muted);font-weight:600}
 .rx-opt-body{flex:1;min-width:0}
 .rx-opt-body .muted{display:block;margin-top:2px}
 .rx-opt-body .status{margin-top:6px}
-.rx-req{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px dashed #d4dcd9;border-radius:10px;margin-top:8px}
-.rx-req .muted{display:block;margin-top:2px}
