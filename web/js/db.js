@@ -49,9 +49,24 @@
     return String(s == null ? "" : s).replace(/[&<>"']/g, c =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
-  // Errors pop up as alerts in every app (customer, rider, admin) — impossible to miss on mobile.
+  // Popup alerts, colored by situation: error (red), success (green), info (blue).
+  // Used for every app's errors via showErr — impossible to miss on mobile.
+  function popup(kind, title, msg) {
+    const icons = { error: "!", success: "✓", info: "i" };
+    const ov = document.createElement("div");
+    ov.className = "popup-ov";
+    ov.innerHTML =
+      '<div class="popup-card kind-' + kind + '"><div class="popup-ic">' + (icons[kind] || "!") + "</div>" +
+      '<div class="popup-title">' + esc(title) + "</div>" +
+      '<div class="popup-msg">' + esc(msg) + "</div>" +
+      '<button class="btn popup-ok">OK</button></div>';
+    ov.querySelector(".popup-ok").onclick = () => ov.remove();
+    ov.addEventListener("click", (e) => { if (e.target === ov) ov.remove(); });
+    document.body.appendChild(ov);
+    ov.querySelector(".popup-ok").focus();
+  }
   function showErr(box, msg) {
-    alert(msg);
+    popup("error", "Error", msg);
   }
 
   function toast(t) {
@@ -86,5 +101,5 @@
     });
   }
 
-  window.DB = { sb, PAGE, medicines, categories, forms, medImage, money, esc, showErr, toast, compressImage };
+  window.DB = { sb, PAGE, medicines, categories, forms, medImage, money, esc, showErr, popup, toast, compressImage };
 })();

@@ -169,3 +169,17 @@ table.data th{color:var(--muted);font-weight:600}
 .rx-opt-body .status{margin-top:6px}
 .otp{background:#fff7f0;border:1.5px dashed #f2731d;border-radius:10px;padding:10px 12px;font-size:14.5px}
 .otp b{font-size:19px;letter-spacing:3px;color:#d95f10}
+/* ── Popup alerts (colored by situation) ─────────────────── */
+.popup-ov{position:fixed;inset:0;background:rgba(20,26,34,.55);display:flex;align-items:center;justify-content:center;padding:22px;z-index:9999}
+.popup-card{background:#fff;border-radius:18px;max-width:340px;width:100%;padding:24px 20px 20px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.25);border-top:6px solid #d32f2f;animation:pop .18s ease-out}
+.popup-card.kind-success{border-top-color:#1e9e50}
+.popup-card.kind-info{border-top-color:#2456e6}
+.popup-ic{width:52px;height:52px;border-radius:50%;margin:0 auto 12px;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:800;color:#fff;background:#d32f2f}
+.kind-success .popup-ic{background:#1e9e50}
+.kind-info .popup-ic{background:#2456e6}
+.popup-title{font-size:19px;font-weight:800;color:#1e2a3a;margin-bottom:6px}
+.popup-msg{font-size:14.5px;color:#5b6472;margin-bottom:16px;overflow-wrap:break-word}
+.popup-card.kind-error .popup-ok{background:#d32f2f}
+.popup-card.kind-success .popup-ok{background:#1e9e50}
+.popup-card.kind-info .popup-ok{background:#2456e6}
+@keyframes pop{from{transform:scale(.92);opacity:0}}
