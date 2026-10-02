@@ -49,8 +49,9 @@
     return String(s == null ? "" : s).replace(/[&<>"']/g, c =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
+  // Errors pop up as alerts in every app (customer, rider, admin) — impossible to miss on mobile.
   function showErr(box, msg) {
-    box.innerHTML = '<div class="err">' + esc(msg) + "</div>";
+    alert(msg);
   }
 
   function toast(t) {

@@ -59,7 +59,7 @@
       if (tab === "deliveries") await vDeliveries();
       else if (tab === "earnings") await vEarnings();
       else vProfile();
-    } catch (e) { alert("Error: " + e.message); }
+    } catch (e) { DB.showErr(msg, e.message); }
   }
 
   // ── Deliveries ─────────────────────────────────────────────────────────
@@ -179,7 +179,7 @@
       if (!o.delivery_otp) {
         if (!confirm("Mark delivered? (No code on this order.)")) return; // pre-OTP orders
       } else {
-        if (code !== o.delivery_otp) { alert("Wrong code \u2014 ask the customer again."); inp.select(); return; }
+        if (code !== o.delivery_otp) { DB.showErr(msg, "Wrong code — ask the customer again."); inp.select(); return; }
         if (o.payment_method === "cod" && !confirm("Code OK. Collected " + DB.money(o.total) + "?")) return;
       }
       inp.disabled = true;
@@ -187,7 +187,7 @@
       if (error) throw error;
       DB.toast("Delivered");
       await vDeliveries();
-    } catch (e) { alert("Error: " + e.message); inp.disabled = false; }
+    } catch (e) { DB.showErr(msg, e.message); inp.disabled = false; }
   }
 
   async function advance(id, to, btn) {
@@ -197,7 +197,7 @@
       if (error) throw error;
       DB.toast("Status updated");
       await vDeliveries();
-    } catch (e) { alert("Error: " + e.message); btn.disabled = false; }
+    } catch (e) { DB.showErr(msg, e.message); btn.disabled = false; }
   }
 
   // ── First sign-in: replace the temporary password ──────────────────────
@@ -222,7 +222,7 @@
         const r = await DB.sb.from("profiles").update({ must_change_password: false }).eq("id", me.id);
         if (r.error) throw r.error;
         location.reload();
-      } catch (e) { alert("Error: " + e.message); }
+      } catch (e) { DB.showErr(box, e.message); }
     };
   }
 
@@ -285,7 +285,7 @@
       .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: "rider_id=eq." + me.id },
         function (p) {
           if (p.eventType === "INSERT") DB.toast("New delivery assigned");
-          refresh().catch(function (e) { alert("Error: " + e.message); });
+          refresh().catch(function (e) { DB.showErr(msg, e.message); });
         })
       .subscribe();
   }
