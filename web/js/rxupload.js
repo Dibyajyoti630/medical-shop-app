@@ -24,6 +24,18 @@
       (oo || []).forEach(o => { orderedRx[o.prescription_id] = 1; });
     } catch (e) { return DB.showErr(msg, e.message); }
 
+    const rxRow = r =>
+      '<div class="row" style="justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #edf1ef">' +
+      '<div><b>' + (r.image_url ? 'Prescription' : 'Chemist approval request') + '</b><br><span class="muted">' +
+      new Date(r.created_at).toLocaleString() + '</span><br>' +
+      '<span class="status ' + r.status + '">' + esc(r.status) + '</span></div>' +
+      ((r.status === "pending" || r.status === "approved") && !orderedRx[r.id]
+        ? '<button class="btn secondary small" data-rxorder="' + r.id + '" data-st="' + r.status + '">Order</button>'
+        : (orderedRx[r.id] ? '<span class="muted" style="font-size:13px">Ordered</span>' : '')) +
+      '</div>';
+    const photoRxs = rxs.filter(r => r.image_url);
+    const reqRxs = rxs.filter(r => !r.image_url);
+
     wrap.innerHTML =
       '<div class="card">' +
       '<h2 style="margin-bottom:12px">Upload New Prescription</h2>' +
@@ -33,18 +45,14 @@
       '<p class="muted" style="margin-top:10px">The photo is compressed on your phone before uploading, so it works even on slow networks. The pharmacist verifies every prescription before Rx medicines can be ordered.</p>' +
       '</div>' +
       '<div class="card"><h2 style="margin-bottom:8px">My Prescriptions</h2>' +
-      (rxs.map(r =>
-        '<div class="row" style="justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #edf1ef">' +
-        '<div><b>' + (r.image_url ? 'Prescription' : 'Chemist approval request') + '</b><br><span class="muted">' +
-        new Date(r.created_at).toLocaleString() + '</span><br>' +
-        '<span class="status ' + r.status + '">' + esc(r.status) + '</span></div>' +
-        ((r.status === "pending" || r.status === "approved") && !orderedRx[r.id]
-          ? '<button class="btn secondary small" data-rxorder="' + r.id + '" data-st="' + r.status + '">Order</button>'
-          : (orderedRx[r.id] ? '<span class="muted" style="font-size:13px">Ordered</span>' : '')) +
-        '</div>'
-      ).join("") || '<p class="muted">No prescriptions uploaded yet.</p>') +
+      (photoRxs.map(rxRow).join("") || '<p class="muted">No prescriptions uploaded yet.</p>') +
       '<p class="muted" style="margin-top:10px">Want medicines directly from a prescription? Upload it above, then tap <b>Order</b> — the pharmacist will call you to confirm the medicines and total.</p>' +
-      '</div>';
+      '</div>' +
+      (reqRxs.length
+        ? '<div class="card"><h2 style="margin-bottom:8px">Chemist Approval Requests</h2>' +
+          reqRxs.map(rxRow).join("") +
+          '<p class="muted" style="margin-top:10px">Approved requests work like a prescription — tap <b>Order</b> or choose them at checkout for Rx medicines.</p></div>'
+        : '');
 
     document.getElementById("rxbtn").onclick = async () => {
       const btn = document.getElementById("rxbtn");
