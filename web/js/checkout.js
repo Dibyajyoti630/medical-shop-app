@@ -69,7 +69,7 @@
       if (addr.lat != null && addr.lon != null) {
         km = GEO.haversineKm(GEO.SHOP.lat, GEO.SHOP.lon, addr.lat, addr.lon);
       } else {
-        const g = await GEO.geocode(addr.address_text).catch(() => null);
+        const g = await GEO.geocode(addr.address_text, addr.label).catch(() => null);
         if (g) {
           km = GEO.haversineKm(GEO.SHOP.lat, GEO.SHOP.lon, g.lat, g.lon);
           DB.sb.from("addresses").update({ lat: g.lat, lon: g.lon }).eq("id", addr.id); // backfill

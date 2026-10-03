@@ -308,13 +308,13 @@
     try {
       var o = await DB.sb.from("orders").select("address_id").eq("id", orderId).single();
       if (o.error || !o.data || !o.data.address_id) return 30;
-      var a = await DB.sb.from("addresses").select("lat,lon,address_text").eq("id", o.data.address_id).single();
+      var a = await DB.sb.from("addresses").select("lat,lon,label,address_text").eq("id", o.data.address_id).single();
       if (a.error || !a.data) return 30;
       var km = null;
       if (a.data.lat != null && a.data.lon != null)
         km = DB.geo.haversineKm(DB.geo.SHOP.lat, DB.geo.SHOP.lon, a.data.lat, a.data.lon);
       else {
-        var g = await DB.geo.geocode(a.data.address_text).catch(function () { return null; });
+        var g = await DB.geo.geocode(a.data.address_text, a.data.label).catch(function () { return null; });
         if (g) km = DB.geo.haversineKm(DB.geo.SHOP.lat, DB.geo.SHOP.lon, g.lat, g.lon);
       }
       return km == null ? 30 : DB.geo.feeForKm(km, sub);

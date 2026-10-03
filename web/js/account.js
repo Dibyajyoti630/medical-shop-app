@@ -131,7 +131,7 @@
       // (If the geocoder can't place it, save anyway — checkout retries.)
       as.disabled = true;
       try {
-        const g = await DB.geo.geocode(text).catch(() => null);
+        const g = await DB.geo.geocode(text, payload.label).catch(() => null);
         if (g) {
           const km = DB.geo.haversineKm(DB.geo.SHOP.lat, DB.geo.SHOP.lon, g.lat, g.lon);
           if (km > DB.geo.MAX_KM)

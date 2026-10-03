@@ -123,12 +123,28 @@
     if (km <= 10) return 50;
     return 80;
   }
-  // Free geocoder (OpenStreetMap Nominatim, no key). Null when unlocatable.
-  async function geocode(text) {
-    const r = await fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" +
-      encodeURIComponent(text + ", Jaleswar, Baleshwar, Odisha, India"), { headers: { Accept: "application/json" } });
-    const j = await r.json();
-    return j && j[0] ? { lat: parseFloat(j[0].lat), lon: parseFloat(j[0].lon) } : null;
+  // Free geocoder (OpenStreetMap Nominatim, no key). Tries the full text, then the
+  // label, then progressively shorter text — first hit wins. Results are biased
+  // toward the shop's area with a viewbox (not bounded, so genuinely far addresses
+  // still resolve and can be blocked as out-of-zone). Null when unlocatable.
+  async function geocode(text, label) {
+    const seen = new Set(), tries = [];
+    const push = t => { t = (t || "").trim(); const k = t.toLowerCase(); if (t && !seen.has(k)) { seen.add(k); tries.push(t); } };
+    push(text); push(label);
+    const words = String(text || "").split(/\s+/).filter(Boolean);
+    for (let i = words.length - 1; i >= 2; i--) push(words.slice(0, i).join(" "));
+    for (const t of tries.slice(0, 6)) {
+      try {
+        const r = await fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1" +
+          "&viewbox=87.00,21.95,87.50,21.45" +
+          "&q=" + encodeURIComponent(t + ", Odisha, India"),
+          { headers: { Accept: "application/json" } });
+        const j = await r.json();
+        if (j && j[0] && isFinite(+j[0].lat) && isFinite(+j[0].lon))
+          return { lat: parseFloat(j[0].lat), lon: parseFloat(j[0].lon) };
+      } catch (e) { /* try the next variant */ }
+    }
+    return null;
   }
 
   window.DB = { sb, PAGE, medicines, categories, forms, medImage, money, esc, showErr, popup, toast, compressImage,
