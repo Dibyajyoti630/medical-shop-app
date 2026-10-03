@@ -102,11 +102,11 @@
   }
 
   // ── Delivery geography ───────────────────────────────────────────────
-  // Base: Jiban Jyoti Medical Store, Uttarpada. Uttarpada itself isn't on the
-  // map, so Jaleswar town's point is used — within ~2 km, negligible for the tiers.
+  // Base: Jiban Jyoti Medical Store, Uttarpada — exact pin from the shop's
+  // Google Maps listing (shared by the owner): 21.698482, 87.246705.
   // Zone: a 20 km "closed circle" around the shop ≈ the Jaleswar → Baliapal span.
   const GEO = {
-    SHOP: { lat: 21.7976, lon: 87.2201 },
+    SHOP: { lat: 21.6985, lon: 87.2467 },
     MAX_KM: 20,
     FREE_ABOVE: 1000, // subtotal at/above this → free delivery regardless of distance
   };
