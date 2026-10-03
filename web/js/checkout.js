@@ -4,7 +4,7 @@
   "use strict";
   const wrap = document.getElementById("wrap"), msg = document.getElementById("msg");
   const esc = DB.esc;
-  const FREE_ABOVE = 1000, FEE = 30;
+  const GEO = DB.geo;
   // Prescription choice for THIS order (per-order Rx requirement): exactly one
   // of — a photo prescription, uploading a new one, or requesting chemist
   // approval (a callback ticket; not orderable). Survives re-renders.
@@ -42,8 +42,6 @@
       return Auth.gate(document.getElementById("gate"), render);
     }
     const sub = items.reduce((a, m) => a + m.price * m.qty, 0);
-    const fee = sub >= FREE_ABOVE ? 0 : FEE;
-    const tot = sub + fee;
     const me = chk.profile;
 
     let addrs = [];
@@ -64,6 +62,31 @@
     } catch (e) { return DB.showErr(msg, e.message); }
 
     const addr = addrs.length ? addrs[0] : null;
+
+    // Distance-based delivery fee from the shop; hard zone boundary.
+    let km = null, fee = 30, zoneOk = true;
+    if (addr) {
+      if (addr.lat != null && addr.lon != null) {
+        km = GEO.haversineKm(GEO.SHOP.lat, GEO.SHOP.lon, addr.lat, addr.lon);
+      } else {
+        const g = await GEO.geocode(addr.address_text).catch(() => null);
+        if (g) {
+          km = GEO.haversineKm(GEO.SHOP.lat, GEO.SHOP.lon, g.lat, g.lon);
+          DB.sb.from("addresses").update({ lat: g.lat, lon: g.lon }).eq("id", addr.id); // backfill
+        }
+      }
+      if (km != null && km > GEO.MAX_KM) zoneOk = false;
+      else fee = km == null ? 30 : GEO.feeForKm(km, sub);
+    }
+    const tot = sub + fee;
+
+    if (addr && !zoneOk) {
+      wrap.innerHTML = '<div class="card"><h2 style="margin-bottom:8px">Outside delivery area</h2>' +
+        '<p class="muted">Sorry, we currently deliver within ' + GEO.MAX_KM + ' km of our store (Jaleswar–Baliapal area). ' +
+        'Please update your delivery address or contact the shop.</p>' +
+        '<a href="account.html" class="btn" style="display:inline-block;margin-top:12px">Update address</a></div>';
+      return;
+    }
 
     // Prescription picker: exactly one choice per order — a photo prescription,
     // uploading a new one, or requesting chemist approval.
@@ -110,7 +133,7 @@
       rxSec +
       '<div class="card">' +
         '<div class="row" style="justify-content:space-between;margin-bottom:8px"><span>Subtotal</span><b>' + DB.money(sub) + '</b></div>' +
-        '<div class="row" style="justify-content:space-between;margin-bottom:8px"><span>Delivery Fee</span><b' + (fee === 0 ? ' style="color:var(--brand)"' : '') + '>' + (fee === 0 ? 'FREE' : DB.money(fee)) + '</b></div>' +
+        '<div class="row" style="justify-content:space-between;margin-bottom:8px"><span>Delivery Fee' + (km != null ? ' <span class="muted">(' + km.toFixed(1) + ' km)</span>' : '') + '</span><b' + (fee === 0 ? ' style="color:var(--brand)"' : '') + '>' + (fee === 0 ? 'FREE' : DB.money(fee)) + '</b></div>' +
         '<hr style="border:0;border-top:1px dashed #d4dcd9;margin:12px 0">' +
         '<div class="row" style="justify-content:space-between;font-size:17px"><b>Total</b><b class="price">' + DB.money(tot) + '</b></div>' +
       '</div>' +

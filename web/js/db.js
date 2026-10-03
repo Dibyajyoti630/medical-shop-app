@@ -101,5 +101,36 @@
     });
   }
 
-  window.DB = { sb, PAGE, medicines, categories, forms, medImage, money, esc, showErr, popup, toast, compressImage };
+  // ── Delivery geography ───────────────────────────────────────────────
+  // Base: Jiban Jyoti Medical Store, Uttarpada. Uttarpada itself isn't on the
+  // map, so Jaleswar town's point is used — within ~2 km, negligible for the tiers.
+  // Zone: a 20 km "closed circle" around the shop ≈ the Jaleswar → Baliapal span.
+  const GEO = {
+    SHOP: { lat: 21.7976, lon: 87.2201 },
+    MAX_KM: 20,
+    FREE_ABOVE: 1000, // subtotal at/above this → free delivery regardless of distance
+  };
+  function haversineKm(lat1, lon1, lat2, lon2) {
+    const R = 6371, t = Math.PI / 180;
+    const h = Math.sin((lat2 - lat1) * t / 2) ** 2 +
+      Math.cos(lat1 * t) * Math.cos(lat2 * t) * Math.sin((lon2 - lon1) * t / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+  // Fee tiers: ≤5 km → ₹30, 5–10 km → ₹50, above → ₹80.
+  function feeForKm(km, subtotal) {
+    if (subtotal <= 0 || subtotal >= GEO.FREE_ABOVE) return 0;
+    if (km <= 5) return 30;
+    if (km <= 10) return 50;
+    return 80;
+  }
+  // Free geocoder (OpenStreetMap Nominatim, no key). Null when unlocatable.
+  async function geocode(text) {
+    const r = await fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" +
+      encodeURIComponent(text + ", Jaleswar, Baleshwar, Odisha, India"), { headers: { Accept: "application/json" } });
+    const j = await r.json();
+    return j && j[0] ? { lat: parseFloat(j[0].lat), lon: parseFloat(j[0].lon) } : null;
+  }
+
+  window.DB = { sb, PAGE, medicines, categories, forms, medImage, money, esc, showErr, popup, toast, compressImage,
+    geo: { SHOP: GEO.SHOP, MAX_KM: GEO.MAX_KM, FREE_ABOVE: GEO.FREE_ABOVE, haversineKm, feeForKm, geocode } };
 })();

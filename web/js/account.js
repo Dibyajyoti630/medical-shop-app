@@ -127,6 +127,19 @@
         landmark: document.getElementById("nland").value.trim(),
         address_text: text,
       };
+      // Locate the address once; refuse saves outside the delivery zone.
+      // (If the geocoder can't place it, save anyway — checkout retries.)
+      as.disabled = true;
+      try {
+        const g = await DB.geo.geocode(text).catch(() => null);
+        if (g) {
+          const km = DB.geo.haversineKm(DB.geo.SHOP.lat, DB.geo.SHOP.lon, g.lat, g.lon);
+          if (km > DB.geo.MAX_KM)
+            return DB.showErr(msg, "This address is about " + km.toFixed(0) + " km away — we deliver within " +
+              DB.geo.MAX_KM + " km of our store (Jaleswar–Baliapal area).");
+          payload.lat = g.lat; payload.lon = g.lon;
+        }
+      } finally { as.disabled = false; }
       let error;
       if (editing) ({ error } = await DB.sb.from("addresses").update(payload).eq("id", editing));
       else ({ error } = await DB.sb.from("addresses").insert(Object.assign({ customer_id: me.id }, payload)));

@@ -299,9 +299,26 @@
     var li = await DB.sb.from("order_items").select("qty,unit_price").eq("order_id", orderId);
     if (li.error) throw li.error;
     var sub = (li.data || []).reduce(function (s, l) { return s + Number(l.qty) * Number(l.unit_price); }, 0);
-    var fee = sub === 0 ? 0 : (sub >= 1000 ? 0 : 30);
+    var fee = await distFee(orderId, sub);
     var u = await DB.sb.from("orders").update({ subtotal: sub, delivery_fee: fee, total: sub + fee }).eq("id", orderId);
     if (u.error) throw u.error;
+  }
+  // Distance-based delivery fee for an order (₹30 fallback when the address can't be located).
+  async function distFee(orderId, sub) {
+    try {
+      var o = await DB.sb.from("orders").select("address_id").eq("id", orderId).single();
+      if (o.error || !o.data || !o.data.address_id) return 30;
+      var a = await DB.sb.from("addresses").select("lat,lon,address_text").eq("id", o.data.address_id).single();
+      if (a.error || !a.data) return 30;
+      var km = null;
+      if (a.data.lat != null && a.data.lon != null)
+        km = DB.geo.haversineKm(DB.geo.SHOP.lat, DB.geo.SHOP.lon, a.data.lat, a.data.lon);
+      else {
+        var g = await DB.geo.geocode(a.data.address_text).catch(function () { return null; });
+        if (g) km = DB.geo.haversineKm(DB.geo.SHOP.lat, DB.geo.SHOP.lon, g.lat, g.lon);
+      }
+      return km == null ? 30 : DB.geo.feeForKm(km, sub);
+    } catch (e) { return 30; }
   }
   async function editItems(orderId) {
     var host = document.getElementById("itemEditor"); if (!host) return;
@@ -841,7 +858,7 @@
               if (co.error) throw co.error;
             } else {
               var sub2 = keep.reduce(function (s, l) { return s + Number(l.qty) * Number(l.unit_price); }, 0);
-              var fee2 = sub2 >= 1000 ? 0 : 30;
+              var fee2 = await distFee(o.id, sub2);
               var uo = await DB.sb.from("orders").update({ status: "placed", subtotal: sub2, delivery_fee: fee2, total: sub2 + fee2 }).eq("id", o.id);
               if (uo.error) throw uo.error;
             }
