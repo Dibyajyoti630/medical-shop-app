@@ -579,10 +579,12 @@
         .in("id", rows.map(function (o) { return o.rider_id; }));
       (p.data || []).forEach(function (x) { names[x.id] = x.name; });
       rows.forEach(function (o) {
-        var g = groups[o.rider_id] || (groups[o.rider_id] = { orders: [], earned: 0, paid: 0 });
+        var g = groups[o.rider_id] || (groups[o.rider_id] = { orders: [], earned: 0, paid: 0, from: o.updated_at, to: o.updated_at });
         g.orders.push(o);
         var f = Number(o.delivery_fee || 0);
         g.earned += f; if (o.fee_paid_to_rider) g.paid += f;
+        if (o.updated_at < g.from) g.from = o.updated_at;
+        if (o.updated_at > g.to) g.to = o.updated_at;
       });
       var py = await DB.sb.from("payouts").select("id,rider_id,amount,created_at").eq("status", "pending");
       (py.data || []).forEach(function (x) { pendPay[x.rider_id] = x; });
@@ -591,16 +593,18 @@
     var totPend = ids.reduce(function (a, id) { return a + (groups[id].earned - groups[id].paid); }, 0);
     box.innerHTML = "<b>Delivery fee payouts</b>" +
       '<p class="muted" style="margin:6px 0">Each order\u2019s delivery fee belongs to its rider. Settle a rider\u2019s pending total with a one-time code they confirm in their app — or mark individual orders paid/unpaid below. Pending total: <b>' + DB.money(totPend) + "</b></p>" +
-      (ids.length ? '<div style="overflow-x:auto"><table class="grid" style="min-width:620px"><tr><th>Rider</th><th>Deliveries</th><th>Earned</th><th>Paid</th><th>Pending</th><th></th></tr>' + ids.map(function (id) {
+      (ids.length ? '<div style="overflow-x:auto"><table class="grid" style="min-width:700px"><tr><th>Rider</th><th>Period</th><th>Deliveries</th><th>Earned</th><th>Paid</th><th>Pending</th><th></th></tr>' + ids.map(function (id) {
         var g = groups[id], pending = g.earned - g.paid, pp = pendPay[id], open = !!payoutOpen[id];
-        var h = "<tr><td><b>" + esc(names[id] || "—") + "</b></td><td>" + g.orders.length + "</td><td>" + DB.money(g.earned) +
+        var dstr = function (ts) { return new Date(ts).toLocaleDateString("en-IN", { day: "numeric", month: "short" }); };
+        var period = dstr(g.from) === dstr(g.to) ? dstr(g.to) : dstr(g.from) + " – " + dstr(g.to);
+        var h = "<tr><td><b>" + esc(names[id] || "—") + "</b></td><td style=\"white-space:nowrap\">" + period + "</td><td>" + g.orders.length + "</td><td>" + DB.money(g.earned) +
           "</td><td>" + DB.money(g.paid) + "</td><td><b>" + DB.money(pending) + "</b></td>" +
           '<td style="white-space:nowrap">' +
           (pp
             ? '<span class="muted">Code sent — waiting for rider</span> <button class="btn sm secondary" data-act="payout-cancel" data-id="' + pp.id + '">Cancel</button>'
             : (pending > 0 ? '<button class="btn sm" data-act="payout-settle" data-id="' + id + '" data-name="' + esc(names[id] || "rider") + '" data-amt="' + pending.toFixed(2) + '">Settle</button> ' : "")) +
           ' <button class="btn sm secondary" data-act="payout-detail" data-id="' + id + '">' + (open ? "Hide" : "Details") + "</button></td></tr>";
-        if (open) h += '<tr><td colspan="6">' + g.orders.map(function (o) {
+        if (open) h += '<tr><td colspan="7">' + g.orders.map(function (o) {
           var paid = !!o.fee_paid_to_rider;
           return '<div class="row" style="padding:6px 0;border-top:1px solid #eee"><span>' +
             new Date(o.updated_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) + " · " + DB.money(Number(o.delivery_fee || 0)) +
