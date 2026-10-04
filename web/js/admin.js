@@ -824,30 +824,24 @@
   async function loadAreaRequests() {
     var box = document.getElementById("reqBox");
     if (!box) return;
-    var r = await DB.sb.from("area_requests").select("*").order("status").order("created_at", { ascending: false }).limit(30);
+    var r = await DB.sb.from("area_requests").select("*").eq("status", "pending").order("created_at", { ascending: false }).limit(30);
     if (r.error) { box.innerHTML = '<div class="empty">Error: ' + esc(r.error.message) + "</div>"; return; }
     var rows = r.data || [], names = {};
     if (rows.length) {
       var p = await DB.sb.from("profiles").select("id,name").in("id", rows.map(function (q) { return q.customer_id; }));
       (p.data || []).forEach(function (x) { names[x.id] = x.name; });
     }
-    var pend = rows.filter(function (q) { return q.status === "pending"; }).length;
     box.innerHTML = "<b>Area requests</b>" +
-      '<p class="muted" style="margin:6px 0">Villages customers asked for. Approve with a fee to start delivering there, or reject. Pending: <b>' + pend + "</b></p>" +
-      (rows.length ? '<div style="overflow-x:auto"><table class="grid" style="min-width:620px"><tr><th>Request</th><th>Status</th><th></th></tr>' + rows.map(function (q) {
-        var h = "<tr><td><b>" + esc(q.village_name) + "</b> <span class='muted'>— " + esc(q.pincode) + "</span><br>" +
+      '<p class="muted" style="margin:6px 0">Villages customers asked for. Approve with a fee to start delivering there, or reject.</p>' +
+      (rows.length ? '<div style="overflow-x:auto"><table class="grid" style="min-width:620px"><tr><th>Request</th><th></th></tr>' + rows.map(function (q) {
+        return "<tr><td><b>" + esc(q.village_name) + "</b> <span class='muted'>— " + esc(q.pincode) + "</span><br>" +
           "<span class='muted'>" + esc(names[q.customer_id] || "") + " · " + esc(q.label || "") +
-          (q.landmark ? " (" + esc(q.landmark) + ")" : "") + "<br>" + esc(q.address_text || "") + "</span>" +
-          (q.status === "rejected" && q.note ? "<br><span class='muted'>Reason: " + esc(q.note) + "</span>" : "") + "</td>" +
-          '<td><span class="pill ' + (q.status === "approved" ? "delivered" : q.status === "rejected" ? "cancelled" : "preparing") + '">' + q.status + "</span></td>";
-        if (q.status === "pending")
-          h += '<td style="white-space:nowrap"><input class="mini-input" data-rfee="' + q.id + '" type="number" min="0" step="1" placeholder="Fee ₹" style="width:76px" aria-label="Fee">' +
-            '<input class="mini-input" data-rkm="' + q.id + '" type="number" min="0" step="0.1" placeholder="Km" style="width:66px;margin-left:6px" aria-label="Km">' +
-            ' <button class="btn sm" data-act="req-ok" data-id="' + q.id + '">Approve</button> ' +
-            '<button class="btn sm secondary" data-act="req-no" data-id="' + q.id + '">Reject</button></td></tr>';
-        else h += "<td></td></tr>";
-        return h;
-      }).join("") + "</table></div>" : '<div class="empty">No requests.</div>');
+          (q.landmark ? " (" + esc(q.landmark) + ")" : "") + "<br>" + esc(q.address_text || "") + "</span></td>" +
+          '<td style="white-space:nowrap"><input class="mini-input" data-rfee="' + q.id + '" type="number" min="0" step="1" placeholder="Fee ₹" style="width:76px" aria-label="Fee">' +
+          '<input class="mini-input" data-rkm="' + q.id + '" type="number" min="0" step="0.1" placeholder="Km" style="width:66px;margin-left:6px" aria-label="Km">' +
+          ' <button class="btn sm" data-act="req-ok" data-id="' + q.id + '">Approve</button> ' +
+          '<button class="btn sm secondary" data-act="req-no" data-id="' + q.id + '">Reject</button></td></tr>';
+      }).join("") + "</table></div>" : '<div class="empty">No pending requests.</div>');
   }
   async function loadAreas() {
     var box = document.getElementById("areaBox");

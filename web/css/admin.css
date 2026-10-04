@@ -17,7 +17,7 @@ body { background: var(--bg); max-width: none; margin: 0; }
 .admin-shell { display: flex; min-height: 100vh; }
 
 /* ── Sidebar ─────────────────────────────────────────── */
-.sidebar { width: 240px; background: var(--sidebar); padding: 18px 14px; flex-shrink: 0; }
+.sidebar { width: 240px; background: var(--sidebar); padding: 18px 14px; flex-shrink: 0; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
 .menu-card { background: var(--card); border-radius: 14px; padding: 18px 12px; display: flex; flex-direction: column; min-height: calc(100vh - 36px); }
 .menu-title { font-size: 12px; letter-spacing: 1.5px; color: var(--muted); padding: 0 10px 10px; }
 #nav { display: flex; flex-direction: column; gap: 2px; }
@@ -132,7 +132,7 @@ table.grid tr:last-child td { border-bottom: 0; }
 /* ── Mobile ─────────────────────────────────────────── */
 @media (max-width: 900px) {
   .admin-shell { flex-direction: column; }
-  .sidebar { width: auto; padding: 10px; }
+  .sidebar { width: auto; padding: 10px; position: static; height: auto; overflow: visible; }
   .menu-card { min-height: 0; padding: 10px; }
   .menu-title, .help-card { display: none; }
   #nav { flex-direction: row; overflow-x: auto; }

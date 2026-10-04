@@ -17,11 +17,13 @@
   async function refreshBadge() {
     var dot = document.querySelector("#bellBtn .dot-badge");
     if (!dot || !uid) return;
+    var n = 0;
     try {
       var r = await DB.sb.from("notifications").select("id", { count: "exact", head: true })
         .eq("user_id", uid).eq("is_read", false);
-      dot.hidden = !(r.count > 0);
-    } catch (e) { /* table may not exist yet — stay quiet */ }
+      n = r.count || 0;
+    } catch (e) { n = 0; /* table may not exist yet — stay quiet */ }
+    dot.hidden = n === 0;
   }
 
   function itemHTML(n) {
@@ -90,6 +92,8 @@
   async function init() {
     var btn = document.getElementById("bellBtn");
     if (!btn || !window.DB || !DB.sb) return;
+    var dot0 = btn.querySelector(".dot-badge");
+    if (dot0) dot0.hidden = true; // never show the dot until we know there's something unread
     try {
       var u = await DB.sb.auth.getUser();
       uid = u.data && u.data.user ? u.data.user.id : null;
