@@ -76,7 +76,7 @@
     t = setTimeout(() => { q = qEl.value; reset(); }, 300);
   });
   moreBtn.addEventListener("click", load);
-  document.getElementById("bellBtn").addEventListener("click", () => toast("No new notifications"));
+  if (window.Notify) Notify.init();
   document.getElementById("locBtn").addEventListener("click", () => toast("Delivering in Uttarpada, Jaleswar"));
 
   load();

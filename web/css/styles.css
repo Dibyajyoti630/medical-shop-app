@@ -188,3 +188,12 @@ table.data th{color:var(--muted);font-weight:600}
 .amatch{border:1px solid #d4dcd9;border-radius:12px;margin-top:6px;max-height:190px;overflow:auto;background:#fff}
 .amatch button{display:block;width:100%;text-align:left;padding:10px 12px;border:0;background:none;cursor:pointer;font-size:14px;color:inherit}
 .amatch button+button{border-top:1px solid #edf1ef}
+
+/* ---------- customer notification dropdown ---------- */
+.notif-drop{position:fixed;top:62px;right:12px;width:min(360px,calc(100vw - 24px));max-height:70vh;overflow:auto;background:#fff;border:1px solid #e6ecea;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.18);z-index:300}
+.notif-head{padding:12px 14px 6px;font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center}
+.notif-head button{border:0;background:none;color:var(--brand);font-weight:700;font-size:13px;cursor:pointer}
+.notif-item{display:block;width:100%;text-align:left;padding:10px 14px;border:0;border-top:1px solid #f0f4f2;background:none;cursor:pointer;font-size:14px;color:inherit}
+.notif-item:hover{background:#f6faf8}
+.notif-item small{color:var(--muted);display:block;margin-top:2px}
+.notif-item.unread b{color:var(--brand-dark)}

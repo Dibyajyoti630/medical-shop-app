@@ -143,11 +143,12 @@
       DB.sb.from("prescriptions").select("id", { count: "exact", head: true }).eq("status", "pending"),
       DB.sb.from("orders").select("id", { count: "exact", head: true }).in("status", ["placed", "awaiting_rx"]),
       DB.sb.from("medicines").select("id", { count: "exact", head: true }).eq("is_active", true).lte("stock", LOW_STOCK),
+      DB.sb.from("area_requests").select("id", { count: "exact", head: true }).eq("status", "pending").then(function (r) { return r; }, function () { return { count: 0 }; }),
     ]);
-    var rxN = res[0].count || 0, ordN = res[1].count || 0, lowN = res[2].count || 0;
+    var rxN = res[0].count || 0, ordN = res[1].count || 0, lowN = res[2].count || 0, areaN = res[3].count || 0;
     var rxEl = document.getElementById("rxBadge");
     rxEl.hidden = rxN === 0; rxEl.textContent = rxN;
-    var n = rxN + ordN + lowN, bell = document.getElementById("bellBadge");
+    var n = rxN + ordN + lowN + areaN, bell = document.getElementById("bellBadge");
     bell.hidden = n === 0; bell.textContent = n > 99 ? "99+" : n;
   }
 
@@ -166,6 +167,10 @@
         remoteChanged("rx");
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "medicines" }, function () { remoteChanged("medicines"); })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "area_requests" }, function (p) {
+        DB.toast("New area request: " + (p.new ? p.new.village_name : ""));
+        updateBadges();
+      })
       .subscribe();
   }
   async function remoteChanged(kind) {
@@ -210,9 +215,13 @@
         DB.sb.from("prescriptions").select("id,created_at,image_url").eq("status", "pending").order("created_at", { ascending: false }).limit(5),
         DB.sb.from("orders").select("id,total,status,created_at").in("status", ["placed", "awaiting_rx"]).order("created_at", { ascending: false }).limit(5),
         DB.sb.from("medicines").select("id,name,stock").eq("is_active", true).lte("stock", LOW_STOCK).order("stock").limit(5),
+        DB.sb.from("area_requests").select("id,village_name,pincode,created_at").eq("status", "pending").order("created_at", { ascending: false }).limit(5).then(function (r) { return r; }, function () { return { data: [] }; }),
       ]);
       if (res[0].error) throw res[0].error; if (res[1].error) throw res[1].error; if (res[2].error) throw res[2].error;
       var items = [];
+      (res[3].data || []).forEach(function (q) {
+        items.push({ t: "Area request: " + q.village_name + " — " + q.pincode, s: timeAgo(q.created_at), v: "settings" });
+      });
       (res[0].data || []).forEach(function (p) {
         items.push({ t: p.image_url ? "Prescription awaiting review" : "Rx approval requested", s: timeAgo(p.created_at), v: "rx" });
       });

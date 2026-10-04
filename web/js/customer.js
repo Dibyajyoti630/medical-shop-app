@@ -129,7 +129,7 @@
     } catch (e) { toast("Voice search unavailable"); }
   });
 
-  document.getElementById("bellBtn").addEventListener("click", () => toast("No new notifications"));
+  if (window.Notify) Notify.init();
   document.getElementById("locBtn").addEventListener("click", () => toast("Delivering in Uttarpada, Jaleswar"));
 
   loadForms();
