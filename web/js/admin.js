@@ -592,7 +592,7 @@
     var ids = Object.keys(groups);
     var totPend = ids.reduce(function (a, id) { return a + (groups[id].earned - groups[id].paid); }, 0);
     box.innerHTML = "<b>Delivery fee payouts</b>" +
-      '<p class="muted" style="margin:6px 0">Each order\u2019s delivery fee belongs to its rider. Settle a rider\u2019s pending total with a one-time code they confirm in their app — or mark individual orders paid/unpaid below. Pending total: <b>' + DB.money(totPend) + "</b></p>" +
+      '<p class="muted" style="margin:6px 0">Each order\u2019s delivery fee belongs to its rider. Settle a rider\u2019s pending total with a one-time code they confirm in their app — or mark individual orders paid below. Pending total: <b>' + DB.money(totPend) + "</b></p>" +
       (ids.length ? '<div style="overflow-x:auto"><table class="grid" style="min-width:700px"><tr><th>Rider</th><th>Period</th><th>Deliveries</th><th>Earned</th><th>Paid</th><th>Pending</th><th></th></tr>' + ids.map(function (id) {
         var g = groups[id], pending = g.earned - g.paid, pp = pendPay[id], open = !!payoutOpen[id];
         var dstr = function (ts) { return new Date(ts).toLocaleDateString("en-IN", { day: "numeric", month: "short" }); };
@@ -609,8 +609,7 @@
           return '<div class="row" style="padding:6px 0;border-top:1px solid #eee"><span>' +
             new Date(o.updated_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) + " · " + DB.money(Number(o.delivery_fee || 0)) +
             '</span><span style="display:flex;gap:8px;align-items:center"><span class="pill ' + (paid ? 'delivered">Paid' : 'preparing">Unpaid') + "</span>" +
-            '<button class="btn sm' + (paid ? " secondary" : "") + '" data-act="fee-paid" data-id="' + o.id + '" data-v="' + (paid ? "0" : "1") + '">' +
-            (paid ? "Mark unpaid" : "Mark paid") + "</button></span></div>";
+            (paid ? "" : '<button class="btn sm" data-act="fee-paid" data-id="' + o.id + '">Mark paid</button>') + "</span></div>";
         }).join("") + "</td></tr>";
         return h;
       }).join("") + "</table></div>" : '<div class="empty">No delivered orders yet.</div>');
@@ -816,11 +815,12 @@
       else if (act === "low-toggle") { medLowOnly = !medLowOnly; await vMedicines(); }
       else if (act === "unmake-rider") { await unmakeRider(id, b.dataset.name || "rider"); }
       else if (act === "fee-paid") {
+        if (!confirm("Mark this delivery fee as paid? This cannot be undone.")) return;
         b.disabled = true;
         try {
-          var fp = await DB.sb.from("orders").update({ fee_paid_to_rider: b.dataset.v === "1" }).eq("id", id);
+          var fp = await DB.sb.from("orders").update({ fee_paid_to_rider: true }).eq("id", id);
           if (fp.error) throw fp.error;
-          DB.toast(b.dataset.v === "1" ? "Delivery fee marked as paid" : "Delivery fee marked as unpaid");
+          DB.toast("Delivery fee marked as paid");
         } catch (err) { DB.toast("Error: " + err.message); }
         await loadPayouts();
       }
