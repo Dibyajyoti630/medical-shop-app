@@ -197,3 +197,7 @@ table.data th{color:var(--muted);font-weight:600}
 .notif-item:hover{background:#f6faf8}
 .notif-item small{color:var(--muted);display:block;margin-top:2px}
 .notif-item.unread b{color:var(--brand-dark)}
+
+/* ---------- shop footer (home page) ---------- */
+.shopfoot{text-align:center;padding:18px 14px 12px;font-size:13px;color:var(--ink);line-height:1.7}
+.shopfoot a{color:var(--brand);text-decoration:none;font-weight:600}

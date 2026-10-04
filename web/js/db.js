@@ -159,7 +159,18 @@
     return areasCache;
   }
 
+  // ── Shop identity ──────────────────────────────────────────────────
+  // Public contact + drug-licence details (from the shop's licence papers).
+  const STORE = {
+    name: "Jiban Jyoti Medical Store",
+    phone: "7205169662",
+    email: "jayprakashn494@gmail.com",
+    address: "Plot No-1143, Uttarpada, PO Rella, Jaleswar, Balasore, Odisha",
+    licences: ["ODRET01714/R", "ODRET01715/RC", "ODRET01716/RX"],
+  };
+
   window.DB = { sb, PAGE, medicines, categories, forms, medImage, money, esc, showErr, popup, toast, compressImage,
+    STORE: STORE,
     areas: deliveryAreas,
     geo: { SHOP: GEO.SHOP, MAX_KM: GEO.MAX_KM, FREE_ABOVE: GEO.FREE_ABOVE, haversineKm, feeForKm, geocode } };
 })();

@@ -808,7 +808,10 @@
     view.innerHTML = head("Settings", "Shop details shown across the app.") +
       '<div class="card"><table class="grid">' +
       "<tr><td><b>Shop name</b></td><td>Jiban Jyoti Medical Store (JJ)</td></tr>" +
-      "<tr><td><b>Address</b></td><td>Uttarpada, Jaleswar, Odisha</td></tr>" +
+      "<tr><td><b>Address</b></td><td>Plot No-1143, Uttarpada, PO Rella, Jaleswar, Balasore, Odisha</td></tr>" +
+      "<tr><td><b>Phone</b></td><td><a href='tel:7205169662'>7205169662</a></td></tr>" +
+      "<tr><td><b>Email</b></td><td><a href='mailto:jayprakashn494@gmail.com'>jayprakashn494@gmail.com</a></td></tr>" +
+      "<tr><td><b>Drug licences</b></td><td>ODRET01714/R, ODRET01715/RC, ODRET01716/RX</td></tr>" +
       "<tr><td><b>Payment</b></td><td>Cash on Delivery</td></tr>" +
       "<tr><td><b>Low-stock threshold</b></td><td>" + LOW_STOCK + " units</td></tr>" +
       '</table><div style="margin-top:16px"><button class="btn ghost" data-act="signout">Sign out</button></div></div>' +
