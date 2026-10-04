@@ -799,11 +799,43 @@
       "<tr><td><b>Payment</b></td><td>Cash on Delivery</td></tr>" +
       "<tr><td><b>Low-stock threshold</b></td><td>" + LOW_STOCK + " units</td></tr>" +
       '</table><div style="margin-top:16px"><button class="btn ghost" data-act="signout">Sign out</button></div></div>' +
-      '<div class="card" id="areaBox"><div class="empty">Loading…</div></div>';
+      '<div class="card" id="areaBox"><div class="empty">Loading…</div></div>' +
+      '<div class="card" id="reqBox"><div class="empty">Loading…</div></div>';
     loadAreas();
+    loadAreaRequests();
   }
 
-  // Delivery villages & their fees — this table is the delivery zone now.
+  // Customer requests for villages not yet in the list. Approving sets the fee,
+  // adds the village, and creates the customer's address — the customer sees
+  // the decision live on their account page.
+  async function loadAreaRequests() {
+    var box = document.getElementById("reqBox");
+    if (!box) return;
+    var r = await DB.sb.from("area_requests").select("*").order("status").order("created_at", { ascending: false }).limit(30);
+    if (r.error) { box.innerHTML = '<div class="empty">Error: ' + esc(r.error.message) + "</div>"; return; }
+    var rows = r.data || [], names = {};
+    if (rows.length) {
+      var p = await DB.sb.from("profiles").select("id,name").in("id", rows.map(function (q) { return q.customer_id; }));
+      (p.data || []).forEach(function (x) { names[x.id] = x.name; });
+    }
+    var pend = rows.filter(function (q) { return q.status === "pending"; }).length;
+    box.innerHTML = "<b>Area requests</b>" +
+      '<p class="muted" style="margin:6px 0">Villages customers asked for. Approve with a fee to start delivering there, or reject. Pending: <b>' + pend + "</b></p>" +
+      (rows.length ? '<div style="overflow-x:auto"><table class="grid" style="min-width:620px"><tr><th>Request</th><th>Status</th><th></th></tr>' + rows.map(function (q) {
+        var h = "<tr><td><b>" + esc(q.village_name) + "</b> <span class='muted'>— " + esc(q.pincode) + "</span><br>" +
+          "<span class='muted'>" + esc(names[q.customer_id] || "") + " · " + esc(q.label || "") +
+          (q.landmark ? " (" + esc(q.landmark) + ")" : "") + "<br>" + esc(q.address_text || "") + "</span>" +
+          (q.status === "rejected" && q.note ? "<br><span class='muted'>Reason: " + esc(q.note) + "</span>" : "") + "</td>" +
+          '<td><span class="pill ' + (q.status === "approved" ? "delivered" : q.status === "rejected" ? "cancelled" : "preparing") + '">' + q.status + "</span></td>";
+        if (q.status === "pending")
+          h += '<td style="white-space:nowrap"><input class="mini-input" data-rfee="' + q.id + '" type="number" min="0" step="1" placeholder="Fee ₹" style="width:76px" aria-label="Fee">' +
+            '<input class="mini-input" data-rkm="' + q.id + '" type="number" min="0" step="0.1" placeholder="Km" style="width:66px;margin-left:6px" aria-label="Km">' +
+            ' <button class="btn sm" data-act="req-ok" data-id="' + q.id + '">Approve</button> ' +
+            '<button class="btn sm secondary" data-act="req-no" data-id="' + q.id + '">Reject</button></td></tr>';
+        else h += "<td></td></tr>";
+        return h;
+      }).join("") + "</table></div>" : '<div class="empty">No requests.</div>');
+  }
   async function loadAreas() {
     var box = document.getElementById("areaBox");
     if (!box) return;
@@ -870,6 +902,45 @@
         var ai = await DB.sb.from("delivery_areas").insert({ name: nm, pincode: pin, distance_km: km, fee: fee });
         DB.toast(ai.error ? "Error: " + ai.error.message : "Village added");
         if (!ai.error) loadAreas();
+      }
+      else if (act === "req-ok") {
+        var feeEl = view.querySelector('[data-rfee="' + id + '"]'), kmEl = view.querySelector('[data-rkm="' + id + '"]');
+        var rfee = parseFloat(feeEl.value), rkm = parseFloat(kmEl.value);
+        if (!(rfee >= 0) || !(rkm >= 0)) { DB.toast("Enter fee and km first"); return; }
+        b.disabled = true;
+        try {
+          var q = await DB.sb.from("area_requests").select("*").eq("id", id).single();
+          if (q.error) throw q.error;
+          var qq = q.data;
+          var ex = await DB.sb.from("delivery_areas").select("id").ilike("name", qq.village_name).maybeSingle();
+          var areaId;
+          if (ex.data) {
+            var eu = await DB.sb.from("delivery_areas").update({ fee: rfee, is_active: true }).eq("id", ex.data.id);
+            if (eu.error) throw eu.error;
+            areaId = ex.data.id;
+          } else {
+            var ni = await DB.sb.from("delivery_areas").insert(
+              { name: qq.village_name, pincode: qq.pincode, distance_km: rkm, fee: rfee }).select("id").single();
+            if (ni.error) throw ni.error;
+            areaId = ni.data.id;
+          }
+          var ad = await DB.sb.from("addresses").insert({
+            customer_id: qq.customer_id, label: qq.label, landmark: qq.landmark,
+            address_text: qq.address_text, area_id: areaId,
+          });
+          if (ad.error) throw ad.error;
+          var st = await DB.sb.from("area_requests").update({ status: "approved" }).eq("id", id);
+          if (st.error) throw st.error;
+          DB.toast("Approved — village added, customer address created");
+        } catch (e) { DB.toast("Error: " + e.message); }
+        await loadAreaRequests(); loadAreas();
+      }
+      else if (act === "req-no") {
+        var reason = prompt("Reason for rejection (optional):");
+        if (reason === null) return;
+        var rj = await DB.sb.from("area_requests").update({ status: "rejected", note: reason.trim() }).eq("id", id);
+        DB.toast(rj.error ? "Error: " + rj.error.message : "Request rejected");
+        if (!rj.error) loadAreaRequests();
       }
       else if (act === "nr-create") { await provisionRider(); }
       else if (act === "gen-pass") { genPass(); }

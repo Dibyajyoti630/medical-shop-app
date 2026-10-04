@@ -4,7 +4,8 @@
   "use strict";
   const wrap = document.getElementById("wrap"), msg = document.getElementById("msg");
   const esc = DB.esc;
-  let mode = "profile"; // 'profile' | 'profileEdit' | 'addrAdd' | { addrEdit: <uuid> }
+  let mode = "profile"; // 'profile' | 'profileEdit' | 'addrAdd' | 'areaReq' | { addrEdit: <uuid> }
+  let reqPrefill = "", selAreaId = null, reqSub = null, reqUid = null;
 
   function validPhone(raw) {
     const digits = raw.replace(/\D/g, "");
@@ -21,13 +22,23 @@
 
   const areaLabel = x => x.name + " — " + x.pincode + " (delivery ₹" + Number(x.fee) + ")";
 
+  // Live decision updates: approve/reject reflects without refresh.
+  function watchAreaRequests(uid) {
+    if (reqSub && reqUid === uid) return;
+    if (reqSub) { try { DB.sb.removeChannel(reqSub); } catch (e) {} reqSub = null; }
+    reqUid = uid;
+    reqSub = DB.sb.channel("area-req-" + uid)
+      .on("postgres_changes", { event: "*", schema: "public", table: "area_requests", filter: "customer_id=eq." + uid }, () => render())
+      .subscribe();
+  }
+
   function addrFormHTML(a, areas) {
     a = a || {};
     const cur = a.area_id && areas ? areas.find(x => x.id === a.area_id) : null;
-    const opts = (areas || []).map(x => '<option value="' + esc(areaLabel(x)) + '">').join("");
+    selAreaId = (cur && cur.id) || null;
     return '<label for="narea">Village / PIN</label>' +
-      '<input id="narea" list="areaList" placeholder="Type village name or PIN…" autocomplete="off" aria-label="Village or PIN" value="' + esc(cur ? areaLabel(cur) : "") + '">' +
-      '<datalist id="areaList">' + opts + "</datalist>" +
+      '<input id="narea" placeholder="Type village name or PIN…" autocomplete="off" aria-label="Village or PIN" value="' + esc(cur ? areaLabel(cur) : "") + '">' +
+      '<div id="areaMatches" class="amatch" hidden></div>' +
       '<div class="row" style="margin-top:8px">' +
       '<input id="nlabel" placeholder="Label (Home)" style="flex:1" aria-label="Label" value="' + esc(a.label || "") + '">' +
       '<input id="nland" placeholder="Landmark" style="flex:2" aria-label="Landmark" value="' + esc(a.landmark || "") + '"></div>' +
@@ -36,23 +47,68 @@
       '<button class="btn secondary" id="acancel" style="flex:1">Cancel</button></div>';
   }
 
+  // Search-as-you-type village picker; selection is mandatory.
+  function bindAreaPicker(areas) {
+    const inp = document.getElementById("narea"), box = document.getElementById("areaMatches");
+    if (!inp || !box) return;
+    const show = () => {
+      const q = inp.value.trim().toLowerCase();
+      if (!q) { box.hidden = true; box.innerHTML = ""; return; }
+      const hits = areas.filter(x => x.name.toLowerCase().includes(q) || x.pincode.includes(q)).slice(0, 8);
+      let h = hits.map(x => '<button type="button" data-area="' + x.id + '">' + esc(areaLabel(x)) + "</button>").join("");
+      if (!hits.length)
+        h = '<div class="muted" style="padding:10px 12px">No match for "' + esc(inp.value.trim()) + '".</div>' +
+          '<button type="button" id="reqArea" style="color:var(--brand);font-weight:700">+ Request this area</button>';
+      box.hidden = false;
+      box.innerHTML = h;
+      box.querySelectorAll("[data-area]").forEach(b => (b.onclick = () => {
+        selAreaId = b.dataset.area;
+        const x = areas.find(a => a.id === selAreaId);
+        inp.value = areaLabel(x);
+        box.hidden = true; box.innerHTML = "";
+      }));
+      const rq = document.getElementById("reqArea");
+      if (rq) rq.onclick = () => { reqPrefill = inp.value.trim(); mode = "areaReq"; render(); };
+    };
+    inp.addEventListener("input", () => { selAreaId = null; show(); });
+    inp.addEventListener("focus", show);
+  }
+
+  function areaReqFormHTML() {
+    const isPin = /^\d{4,6}$/.test(reqPrefill || "");
+    return '<p class="muted" style="margin:0 0 8px">Village not in our list? Send a request — the shop sets the fee and you\u2019ll see the decision here.</p>' +
+      '<label for="rvillage">Village name</label>' +
+      '<input id="rvillage" placeholder="e.g. Baliapal Chowk" value="' + esc(isPin ? "" : reqPrefill) + '">' +
+      '<label for="rpin">PIN code</label>' +
+      '<input id="rpin" placeholder="e.g. 756026" inputmode="numeric" value="' + esc(isPin ? reqPrefill : "") + '">' +
+      '<div class="row" style="margin-top:8px">' +
+      '<input id="rlabel" placeholder="Label (Home)" style="flex:1" aria-label="Label">' +
+      '<input id="rland" placeholder="Landmark" style="flex:2" aria-label="Landmark"></div>' +
+      '<textarea id="rtext" rows="2" placeholder="House no, street…" style="margin-top:8px" aria-label="House details"></textarea>' +
+      '<div class="row" style="margin-top:8px"><button class="btn" id="rsave" style="flex:1">Send request</button>' +
+      '<button class="btn secondary" id="acancel" style="flex:1">Cancel</button></div>';
+  }
+
   async function render() {
     const chk = await Auth.requireRole("customer").catch(() => ({ ok: false, reason: "signin" }));
     if (!chk.ok) return Auth.gate(wrap, render);
     const me = chk.profile;
 
-    let addrs = [], email = "", areas = [];
+    let addrs = [], email = "", areas = [], reqs = [];
     try {
-      const [u, r, ar] = await Promise.all([
+      const [u, r, ar, qr] = await Promise.all([
         Auth.user().catch(() => null),
         DB.sb.from("addresses").select("*").eq("customer_id", me.id).order("created_at"),
         (DB.areas ? DB.areas() : Promise.resolve([])).catch(() => []),
+        DB.sb.from("area_requests").select("*").eq("customer_id", me.id).order("created_at", { ascending: false }).then(x => x.data || [], () => []),
       ]);
       if (r.error) throw r.error;
       addrs = r.data;
       email = (u && u.email) || "";
       areas = ar || [];
+      reqs = qr || [];
     } catch (e) { return DB.showErr(msg, e.message); }
+    watchAreaRequests(me.id);
     const areaById = {};
     areas.forEach(x => { areaById[x.id] = x; });
 
@@ -94,13 +150,31 @@
     let addrCard = '<div class="card"><h2 style="margin-bottom:8px">My Addresses</h2><div id="alist">' +
       (rows || '<p class="muted">No addresses saved.</p>') + "</div>";
     if (mode === "addrAdd") addrCard += addrFormHTML(null, areas);
+    else if (mode === "areaReq") addrCard += areaReqFormHTML();
     else if (!editing) addrCard += '<button class="btn" id="aaddshow" style="margin-top:8px">+ Add New Address</button>';
     addrCard += "</div>";
 
-    wrap.innerHTML = prof + addrCard +
+    let reqCard = "";
+    if (reqs.length) {
+      const pill = s => s === "approved"
+        ? '<span style="background:#ddf3e7;color:#0b8f63;font-weight:700;font-size:12px;padding:4px 10px;border-radius:999px;white-space:nowrap">Approved</span>'
+        : s === "rejected"
+        ? '<span style="background:#fde2e2;color:#c0392b;font-weight:700;font-size:12px;padding:4px 10px;border-radius:999px;white-space:nowrap">Not deliverable</span>'
+        : '<span style="background:#fdeeda;color:#d97a06;font-weight:700;font-size:12px;padding:4px 10px;border-radius:999px;white-space:nowrap">Pending</span>';
+      reqCard = '<div class="card"><h2 style="margin-bottom:8px">My area requests</h2>' + reqs.map(q =>
+        '<div class="row" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid #edf1ef"><div><b>' +
+        esc(q.village_name) + '</b> <span class="muted">— ' + esc(q.pincode) + "</span><br><span class='muted'>" +
+        esc(q.address_text || "") +
+        (q.status === "approved" ? "<br>Approved — pick it from the village list above." : "") +
+        (q.status === "rejected" && q.note ? "<br>Note: " + esc(q.note) : "") +
+        "</span></div>" + pill(q.status) + "</div>").join("") + "</div>";
+    }
+
+    wrap.innerHTML = prof + addrCard + reqCard +
       '<div class="card"><button class="btn secondary" id="so">Sign out</button></div>';
 
     document.getElementById("so").onclick = async () => { await Auth.signOut(); mode = "profile"; render(); };
+    bindAreaPicker(areas);
 
     const pe = document.getElementById("pedit");
     if (pe) pe.onclick = () => { mode = "profileEdit"; render(); };
@@ -133,16 +207,15 @@
 
     const as = document.getElementById("asave");
     if (as) as.onclick = async () => {
-      const areaText = document.getElementById("narea").value.trim();
-      const area = areas.find(x => areaLabel(x) === areaText);
-      if (!area) return DB.showErr(msg, "Select your village from the list.");
+      if (!selAreaId || !areas.some(x => x.id === selAreaId))
+        return DB.showErr(msg, "Select your village from the list.");
       const text = document.getElementById("ntext").value.trim();
       if (!text) return DB.showErr(msg, "Enter your house no / street.");
       const payload = {
         label: document.getElementById("nlabel").value.trim() || "Home",
         landmark: document.getElementById("nland").value.trim(),
         address_text: text,
-        area_id: area.id,
+        area_id: selAreaId,
         lat: null,
         lon: null,
       };
@@ -155,6 +228,30 @@
       if (error) return DB.showErr(msg, error.message);
       if (DB.toast) DB.toast(editing ? "Address updated" : "Address saved");
       mode = "profile";
+      render();
+    };
+
+    const rs = document.getElementById("rsave");
+    if (rs) rs.onclick = async () => {
+      const vn = document.getElementById("rvillage").value.trim();
+      const pc = document.getElementById("rpin").value.trim();
+      const tx = document.getElementById("rtext").value.trim();
+      if (!vn) return DB.showErr(msg, "Enter the village name.");
+      if (!/^\d{6}$/.test(pc)) return DB.showErr(msg, "Enter a valid 6-digit PIN.");
+      if (!tx) return DB.showErr(msg, "Enter your house no / street.");
+      rs.disabled = true;
+      const ins = await DB.sb.from("area_requests").insert({
+        customer_id: me.id,
+        village_name: vn,
+        pincode: pc,
+        label: document.getElementById("rlabel").value.trim() || "Home",
+        landmark: document.getElementById("rland").value.trim(),
+        address_text: tx,
+      });
+      rs.disabled = false;
+      if (ins.error) return DB.showErr(msg, ins.error.message);
+      if (DB.toast) DB.toast("Request sent — the shop will review it soon.");
+      mode = "profile"; reqPrefill = "";
       render();
     };
 

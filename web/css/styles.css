@@ -183,3 +183,8 @@ table.data th{color:var(--muted);font-weight:600}
 .popup-card.kind-success .popup-ok{background:#1e9e50}
 .popup-card.kind-info .popup-ok{background:#2456e6}
 @keyframes pop{from{transform:scale(.92);opacity:0}}
+
+/* ---------- searchable village picker ---------- */
+.amatch{border:1px solid #d4dcd9;border-radius:12px;margin-top:6px;max-height:190px;overflow:auto;background:#fff}
+.amatch button{display:block;width:100%;text-align:left;padding:10px 12px;border:0;background:none;cursor:pointer;font-size:14px;color:inherit}
+.amatch button+button{border-top:1px solid #edf1ef}
