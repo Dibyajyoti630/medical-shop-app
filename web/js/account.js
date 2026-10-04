@@ -19,13 +19,15 @@
   const svgTrash = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>';
   const svgPin = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>';
 
+  const areaLabel = x => x.name + " — " + x.pincode + " (delivery ₹" + Number(x.fee) + ")";
+
   function addrFormHTML(a, areas) {
     a = a || {};
-    const opts = (areas || []).map(x =>
-      '<option value="' + x.id + '"' + (a.area_id === x.id ? " selected" : "") + ">" +
-      esc(x.name) + " — " + esc(x.pincode) + " (delivery ₹" + Number(x.fee) + ")</option>").join("");
-    return '<label for="narea">Village</label>' +
-      '<select id="narea" aria-label="Village"><option value="">Select your village…</option>' + opts + "</select>" +
+    const cur = a.area_id && areas ? areas.find(x => x.id === a.area_id) : null;
+    const opts = (areas || []).map(x => '<option value="' + esc(areaLabel(x)) + '">').join("");
+    return '<label for="narea">Village / PIN</label>' +
+      '<input id="narea" list="areaList" placeholder="Type village name or PIN…" autocomplete="off" aria-label="Village or PIN" value="' + esc(cur ? areaLabel(cur) : "") + '">' +
+      '<datalist id="areaList">' + opts + "</datalist>" +
       '<div class="row" style="margin-top:8px">' +
       '<input id="nlabel" placeholder="Label (Home)" style="flex:1" aria-label="Label" value="' + esc(a.label || "") + '">' +
       '<input id="nland" placeholder="Landmark" style="flex:2" aria-label="Landmark" value="' + esc(a.landmark || "") + '"></div>' +
@@ -131,15 +133,16 @@
 
     const as = document.getElementById("asave");
     if (as) as.onclick = async () => {
-      const areaId = document.getElementById("narea").value;
-      if (!areaId) return DB.showErr(msg, "Select your village.");
+      const areaText = document.getElementById("narea").value.trim();
+      const area = areas.find(x => areaLabel(x) === areaText);
+      if (!area) return DB.showErr(msg, "Select your village from the list.");
       const text = document.getElementById("ntext").value.trim();
       if (!text) return DB.showErr(msg, "Enter your house no / street.");
       const payload = {
         label: document.getElementById("nlabel").value.trim() || "Home",
         landmark: document.getElementById("nland").value.trim(),
         address_text: text,
-        area_id: areaId,
+        area_id: area.id,
         lat: null,
         lon: null,
       };
