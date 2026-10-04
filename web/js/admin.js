@@ -597,7 +597,7 @@
     var ids = Object.keys(groups);
     var totPend = ids.reduce(function (a, id) { return a + (groups[id].earned - groups[id].paid); }, 0);
     box.innerHTML = "<b>Delivery fee payouts</b>" +
-      '<p class="muted" style="margin:6px 0">Each order\u2019s delivery fee belongs to its rider. Settle a rider\u2019s pending total with a one-time code they confirm in their app — or mark individual orders paid below. Pending total: <b>' + DB.money(totPend) + "</b></p>" +
+      '<p class="muted" style="margin:6px 0">Each order\u2019s delivery fee belongs to its rider. Settle a rider\u2019s pending total with a one-time code — the rider enters it in their app to confirm receipt, and only then do the orders flip to paid. Pending total: <b>' + DB.money(totPend) + "</b></p>" +
       (ids.length ? '<div style="overflow-x:auto"><table class="grid" style="min-width:700px"><tr><th>Rider</th><th>Period</th><th>Deliveries</th><th>Earned</th><th>Paid</th><th>Pending</th><th></th></tr>' + ids.map(function (id) {
         var g = groups[id], pending = g.earned - g.paid, pp = pendPay[id], open = !!payoutOpen[id];
         var dstr = function (ts) { return new Date(ts).toLocaleDateString("en-IN", { day: "numeric", month: "short" }); };
@@ -611,10 +611,9 @@
           ' <button class="btn sm secondary" data-act="payout-detail" data-id="' + id + '">' + (open ? "Hide" : "Details") + "</button></td></tr>";
         if (open) h += '<tr><td colspan="7">' + g.orders.map(function (o) {
           var paid = !!o.fee_paid_to_rider;
-          return '<div class="row" style="padding:6px 0;border-top:1px solid #eee"><span>' +
+          return '<div class="row" style="padding:6px 0;border-top:1px solid #eee;justify-content:space-between"><span>' +
             new Date(o.updated_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) + " · " + DB.money(Number(o.delivery_fee || 0)) +
-            '</span><span style="display:flex;gap:8px;align-items:center"><span class="pill ' + (paid ? 'delivered">Paid' : 'preparing">Unpaid') + "</span>" +
-            (paid ? "" : '<button class="btn sm" data-act="fee-paid" data-id="' + o.id + '">Mark paid</button>') + "</span></div>";
+            '</span><span class="pill ' + (paid ? 'delivered">Paid' : 'preparing">Unpaid') + "</span></div>";
         }).join("") + "</td></tr>";
         return h;
       }).join("") + "</table></div>" : '<div class="empty">No delivered orders yet.</div>');
@@ -876,16 +875,6 @@
       else if (act === "filter") { orderFilter = b.dataset.f; await vOrders(); }
       else if (act === "low-toggle") { medLowOnly = !medLowOnly; await vMedicines(); }
       else if (act === "unmake-rider") { await unmakeRider(id, b.dataset.name || "rider"); }
-      else if (act === "fee-paid") {
-        if (!confirm("Mark this delivery fee as paid? This cannot be undone.")) return;
-        b.disabled = true;
-        try {
-          var fp = await DB.sb.from("orders").update({ fee_paid_to_rider: true }).eq("id", id);
-          if (fp.error) throw fp.error;
-          DB.toast("Delivery fee marked as paid");
-        } catch (err) { DB.toast("Error: " + err.message); }
-        await loadPayouts();
-      }
       else if (act === "payout-settle") { await settleRider(id, b.dataset.name || "rider", b.dataset.amt); }
       else if (act === "payout-cancel") { await cancelPayout(id); }
       else if (act === "payout-detail") { payoutOpen[id] = !payoutOpen[id]; await loadPayouts(); }
