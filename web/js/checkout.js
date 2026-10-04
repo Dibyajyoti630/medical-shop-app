@@ -64,7 +64,7 @@
       }
     } catch (e) { return DB.showErr(msg, e.message); }
 
-    const addr = addrs.length ? addrs[0] : null;
+    const addr = addrs.find(a => a.is_default) || addrs[0] || null;
     const area = addr && addr.area_id ? areas.find(x => x.id === addr.area_id) : null;
 
     // Village-wise fee from the delivery table; old geocoded addresses keep

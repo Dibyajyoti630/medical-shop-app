@@ -139,7 +139,10 @@
         return '<div style="padding:8px 0">' + addrFormHTML(a, areas) + "</div>";
       const an = a.area_id && areaById[a.area_id];
       return '<div class="row" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid #edf1ef">' +
-        '<div class="row" style="flex:1"><span style="color:var(--brand);line-height:0">' + svgPin + "</span><div><b>" +
+        '<div class="row" style="flex:1">' +
+        '<input type="radio" name="defAddr" data-def="' + a.id + '"' + (a.is_default ? " checked" : "") +
+        ' aria-label="Use as delivery address" title="Deliver here" style="accent-color:var(--brand);width:18px;height:18px;flex:none">' +
+        '<span style="color:var(--brand);line-height:0">' + svgPin + "</span><div><b>" +
         esc(a.label) + "</b><br><span class='muted'>" + esc(a.address_text) +
         (a.landmark ? " (" + esc(a.landmark) + ")" : "") +
         (an ? "<br>" + esc(an.name) + " — " + esc(an.pincode) : "") + "</span></div></div>" +
@@ -147,30 +150,21 @@
         '<button class="iconbtn" data-del="' + a.id + '" aria-label="Delete address">' + svgTrash + "</button></div>";
     }).join("");
 
+    // Pending requests live inside the address list; approved ones arrive as
+    // addresses automatically, rejected ones surface via the bell.
+    const pendRows = reqs.filter(q => q.status === "pending").map(q =>
+      '<div style="padding:10px 0;border-top:1px solid #edf1ef"><b>' + esc(q.village_name) + '</b> <span class="muted">— ' +
+      esc(q.pincode) + '</span><br><span style="background:#fdeeda;color:#d97a06;font-weight:700;font-size:12px;padding:3px 10px;border-radius:999px">Pending approval</span></div>'
+    ).join("");
+
     let addrCard = '<div class="card"><h2 style="margin-bottom:8px">My Addresses</h2><div id="alist">' +
-      (rows || '<p class="muted">No addresses saved.</p>') + "</div>";
+      (rows || '<p class="muted">No addresses saved.</p>') + pendRows + "</div>";
     if (mode === "addrAdd") addrCard += addrFormHTML(null, areas);
     else if (mode === "areaReq") addrCard += areaReqFormHTML();
     else if (!editing) addrCard += '<button class="btn" id="aaddshow" style="margin-top:8px">+ Add New Address</button>';
     addrCard += "</div>";
 
-    let reqCard = "";
-    if (reqs.length) {
-      const pill = s => s === "approved"
-        ? '<span style="background:#ddf3e7;color:#0b8f63;font-weight:700;font-size:12px;padding:4px 10px;border-radius:999px;white-space:nowrap">Approved</span>'
-        : s === "rejected"
-        ? '<span style="background:#fde2e2;color:#c0392b;font-weight:700;font-size:12px;padding:4px 10px;border-radius:999px;white-space:nowrap">Not deliverable</span>'
-        : '<span style="background:#fdeeda;color:#d97a06;font-weight:700;font-size:12px;padding:4px 10px;border-radius:999px;white-space:nowrap">Pending</span>';
-      reqCard = '<div class="card"><h2 style="margin-bottom:8px">My area requests</h2>' + reqs.map(q =>
-        '<div class="row" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid #edf1ef"><div><b>' +
-        esc(q.village_name) + '</b> <span class="muted">— ' + esc(q.pincode) + "</span><br><span class='muted'>" +
-        esc(q.address_text || "") +
-        (q.status === "approved" ? "<br>Approved — pick it from the village list above." : "") +
-        (q.status === "rejected" && q.note ? "<br>Note: " + esc(q.note) : "") +
-        "</span></div>" + pill(q.status) + "</div>").join("") + "</div>";
-    }
-
-    wrap.innerHTML = prof + addrCard + reqCard +
+    wrap.innerHTML = prof + addrCard +
       '<div class="card"><button class="btn secondary" id="so">Sign out</button></div>';
 
     document.getElementById("so").onclick = async () => { await Auth.signOut(); mode = "profile"; render(); };
@@ -262,6 +256,14 @@
     }));
     wrap.querySelectorAll("[data-edit]").forEach(b => (b.onclick = () => {
       mode = { addrEdit: b.dataset.edit };
+      render();
+    }));
+    wrap.querySelectorAll("[data-def]").forEach(r => (r.onchange = async () => {
+      var u1 = await DB.sb.from("addresses").update({ is_default: false }).eq("customer_id", me.id).eq("is_default", true);
+      if (u1.error) return DB.showErr(msg, u1.error.message);
+      var u2 = await DB.sb.from("addresses").update({ is_default: true }).eq("id", r.dataset.def);
+      if (u2.error) return DB.showErr(msg, u2.error.message);
+      if (DB.toast) DB.toast("Delivery address selected");
       render();
     }));
   }
