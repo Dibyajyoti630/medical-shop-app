@@ -28,6 +28,8 @@ body.rider main { max-width: 560px; margin: 0 auto; }
 .pill.st-assigned { background: #dbe7ff; color: #2456c8; }
 .pill.st-picked_up { background: #f2731d; color: #fff; }
 .pill.st-out_for_delivery { background: #e3f6e9; color: #1e9e50; }
+.pill.st-paid { background: #e3f6e9; color: #1e9e50; }
+.pill.st-pending { background: #fdeeda; color: #d97a06; }
 .pill { font-size: 13px; font-weight: 700; padding: 5px 13px; border-radius: 999px; white-space: nowrap; }
 
 /* ── Now Managing card ──────────────────────────────────── */

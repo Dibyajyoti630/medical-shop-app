@@ -252,19 +252,34 @@
   // ── Earnings ───────────────────────────────────────────────────────────
   async function vEarnings() {
     const start = new Date(); start.setHours(0, 0, 0, 0);
-    const [t, all] = await Promise.all([
-      DB.sb.from("orders").select("total,payment_method").eq("rider_id", me.id).eq("status", "delivered").gte("updated_at", start.toISOString()),
+    const [t, all, fees] = await Promise.all([
+      DB.sb.from("orders").select("total,payment_method,delivery_fee").eq("rider_id", me.id).eq("status", "delivered").gte("updated_at", start.toISOString()),
       DB.sb.from("orders").select("id", { count: "exact", head: true }).eq("rider_id", me.id).eq("status", "delivered"),
+      DB.sb.from("orders").select("id,delivery_fee,fee_paid_to_rider,updated_at").eq("rider_id", me.id).eq("status", "delivered").order("updated_at", { ascending: false }).limit(40),
     ]);
     if (t.error) throw t.error;
-    const rows = t.data || [];
+    if (fees.error) throw fees.error;
+    const rows = t.data || [], fr = fees.data || [];
+    const num = o => Number(o.delivery_fee || 0);
     const cod = rows.filter(o => o.payment_method === "cod").reduce((a, o) => a + Number(o.total || 0), 0);
+    const feeToday = rows.reduce((a, o) => a + num(o), 0);
+    const feeAll = fr.reduce((a, o) => a + num(o), 0);
+    const feePaid = fr.filter(o => o.fee_paid_to_rider).reduce((a, o) => a + num(o), 0);
+    const dstr = ts => new Date(ts).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
     app.innerHTML = '<div class="r-body"><h2>Earnings</h2>' +
       '<div class="r-earn"><h3>Today</h3>' +
       '<div class="row"><span>Deliveries completed</span><b>' + rows.length + "</b></div>" +
+      '<div class="row"><span>Delivery fees earned</span><b>' + DB.money(feeToday) + "</b></div>" +
       '<div class="row"><span>Cash collected (COD)</span><b>' + DB.money(cod) + "</b></div></div>" +
-      '<div class="r-earn"><h3>All time</h3>' +
-      '<div class="row"><span>Deliveries completed</span><b>' + (all.count || 0) + "</b></div></div></div>";
+      '<div class="r-earn"><h3>Delivery fee payouts</h3>' +
+      '<div class="row"><span>Deliveries completed</span><b>' + (all.count || 0) + "</b></div>" +
+      '<div class="row"><span>Total fees earned</span><b>' + DB.money(feeAll) + "</b></div>" +
+      '<div class="row"><span>Paid by shop</span><b>' + DB.money(feePaid) + "</b></div>" +
+      '<div class="row"><span>Pending payout</span><b>' + DB.money(feeAll - feePaid) + "</b></div></div>" +
+      '<div class="r-earn"><h3>Recent deliveries</h3>' + (fr.length ? fr.map(o =>
+        '<div class="row"><span>' + dstr(o.updated_at) + " · " + DB.money(num(o)) + "</span>" +
+        '<span class="pill ' + (o.fee_paid_to_rider ? 'st-paid">Paid' : 'st-pending">Pending') + "</span></div>").join("")
+        : '<div class="muted">No deliveries yet.</div>') + "</div></div>";
   }
 
   // ── Profile ────────────────────────────────────────────────────────────

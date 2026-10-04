@@ -530,8 +530,10 @@
       '<button class="btn sm secondary" data-act="gen-pass">Generate</button>' +
       '<button class="btn sm" data-act="nr-create">Create rider</button></div>' +
       '<div id="nrResult" style="margin-top:8px"></div></div>' +
-      '<div class="card" id="staffTable"><div class="empty">Loading…</div></div>';
+      '<div class="card" id="staffTable"><div class="empty">Loading…</div></div>' +
+      '<div class="card" id="payoutBox"><div class="empty">Loading…</div></div>';
     await loadStaffTable();
+    await loadPayouts();
   }
 
   async function loadStaffTable() {
@@ -558,6 +560,35 @@
             '<td><button class="btn sm danger" data-act="unmake-rider" data-id="' + p.id + '" data-name="' + esc(p.name || "rider") + '">Revoke</button></td></tr>';
         }).join("") + "</table>"
       : '<div class="empty">No riders yet.</div>';
+  }
+
+  // Delivery-fee payouts: the fee on each delivered order belongs to its rider.
+  // Mark it paid once settled; the rider sees the status live on Earnings.
+  async function loadPayouts() {
+    var box = document.getElementById("payoutBox");
+    var r = await DB.sb.from("orders").select("id,delivery_fee,fee_paid_to_rider,updated_at,rider_id")
+      .eq("status", "delivered").not("rider_id", "is", null)
+      .order("updated_at", { ascending: false }).limit(100);
+    if (r.error) { box.innerHTML = '<div class="empty">Error: ' + esc(r.error.message) + "</div>"; return; }
+    var rows = r.data || [], names = {};
+    if (rows.length) {
+      var p = await DB.sb.from("profiles").select("id,name")
+        .in("id", rows.map(function (o) { return o.rider_id; }));
+      (p.data || []).forEach(function (x) { names[x.id] = x.name; });
+    }
+    var pend = rows.filter(function (o) { return !o.fee_paid_to_rider; })
+      .reduce(function (a, o) { return a + Number(o.delivery_fee || 0); }, 0);
+    box.innerHTML = "<b>Delivery fee payouts</b>" +
+      '<p class="muted" style="margin:6px 0">Each order\u2019s delivery fee belongs to its rider. Mark it paid once you settle it — it reflects on the rider\u2019s Earnings page. Pending total: <b>' + DB.money(pend) + "</b></p>" +
+      (rows.length ? '<table class="grid"><tr><th>Date</th><th>Rider</th><th>Fee</th><th>Status</th><th></th></tr>' + rows.map(function (o) {
+        var paid = !!o.fee_paid_to_rider;
+        return "<tr><td>" + new Date(o.updated_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) + "</td>" +
+          "<td>" + esc(names[o.rider_id] || "—") + "</td>" +
+          "<td>" + DB.money(Number(o.delivery_fee || 0)) + "</td>" +
+          '<td><span class="pill ' + (paid ? 'delivered">Paid' : 'preparing">Unpaid') + "</span></td>" +
+          '<td><button class="btn sm' + (paid ? " secondary" : "") + '" data-act="fee-paid" data-id="' + o.id + '" data-v="' + (paid ? "0" : "1") + '">' +
+          (paid ? "Mark unpaid" : "Mark paid") + "</button></td></tr>";
+      }).join("") + "</table>" : '<div class="empty">No delivered orders yet.</div>');
   }
 
   function genPass() {
@@ -743,6 +774,15 @@
       else if (act === "filter") { orderFilter = b.dataset.f; await vOrders(); }
       else if (act === "low-toggle") { medLowOnly = !medLowOnly; await vMedicines(); }
       else if (act === "unmake-rider") { await unmakeRider(id, b.dataset.name || "rider"); }
+      else if (act === "fee-paid") {
+        b.disabled = true;
+        try {
+          var fp = await DB.sb.from("orders").update({ fee_paid_to_rider: b.dataset.v === "1" }).eq("id", id);
+          if (fp.error) throw fp.error;
+          DB.toast(b.dataset.v === "1" ? "Delivery fee marked as paid" : "Delivery fee marked as unpaid");
+        } catch (err) { DB.toast("Error: " + err.message); }
+        await loadPayouts();
+      }
       else if (act === "nr-create") { await provisionRider(); }
       else if (act === "gen-pass") { genPass(); }
       else if (act === "adv") {

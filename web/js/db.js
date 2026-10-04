@@ -108,7 +108,7 @@
   const GEO = {
     SHOP: { lat: 21.6985, lon: 87.2467 },
     MAX_KM: 20,
-    FREE_ABOVE: 1000, // subtotal at/above this → free delivery regardless of distance
+    FREE_ABOVE: 2000, // subtotal at/above this → free delivery regardless of distance
   };
   function haversineKm(lat1, lon1, lat2, lon2) {
     const R = 6371, t = Math.PI / 180;
