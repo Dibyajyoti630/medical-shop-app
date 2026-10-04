@@ -46,15 +46,18 @@
 
     let addrs = [];
     let rxs = [];
+    let areas = [];
     const hasRx = items.some(m => m.rx_required);
     try {
-      const p = [DB.sb.from("addresses").select("*").eq("customer_id", me.id).order("created_at")];
+      const p = [DB.sb.from("addresses").select("*").eq("customer_id", me.id).order("created_at"),
+        (DB.areas ? DB.areas() : Promise.resolve([])).catch(() => [])];
       if (hasRx) p.push(DB.sb.from("prescriptions").select("id,status,image_url,created_at").eq("customer_id", me.id)
         .in("status", ["pending", "approved"]).order("created_at", { ascending: false }).limit(10));
       const results = await Promise.all(p);
       addrs = results[0].data || [];
+      areas = results[1] || [];
       if (hasRx) {
-        const all = (results[1] && results[1].data) || [];
+        const all = (results[2] && results[2].data) || [];
         rxs = all.filter(r => r.image_url); // requests are callback tickets — never orderable
         if (rxPick && rxPick.t === "rx" && !rxs.some(r => r.id === rxPick.id)) rxPick = null;
         if (rxPick && rxPick.t === "req") rxPick = null;
@@ -62,21 +65,28 @@
     } catch (e) { return DB.showErr(msg, e.message); }
 
     const addr = addrs.length ? addrs[0] : null;
+    const area = addr && addr.area_id ? areas.find(x => x.id === addr.area_id) : null;
 
-    // Distance-based delivery fee from the shop; hard zone boundary.
-    let km = null, fee = 30, zoneOk = true;
+    // Village-wise fee from the delivery table; old geocoded addresses keep
+    // the distance path; unknown locations fall back to Rs 30.
+    let km = null, fee = 30, zoneOk = true, feeNote = "";
     if (addr) {
-      if (addr.lat != null && addr.lon != null) {
-        km = GEO.haversineKm(GEO.SHOP.lat, GEO.SHOP.lon, addr.lat, addr.lon);
+      if (area) {
+        fee = sub >= GEO.FREE_ABOVE ? 0 : Number(area.fee);
+        feeNote = area.name;
       } else {
-        const g = await GEO.geocode(addr.address_text, addr.label).catch(() => null);
-        if (g) {
-          km = GEO.haversineKm(GEO.SHOP.lat, GEO.SHOP.lon, g.lat, g.lon);
-          DB.sb.from("addresses").update({ lat: g.lat, lon: g.lon }).eq("id", addr.id); // backfill
+        if (addr.lat != null && addr.lon != null) {
+          km = GEO.haversineKm(GEO.SHOP.lat, GEO.SHOP.lon, addr.lat, addr.lon);
+        } else {
+          const g = await GEO.geocode(addr.address_text, addr.label).catch(() => null);
+          if (g) {
+            km = GEO.haversineKm(GEO.SHOP.lat, GEO.SHOP.lon, g.lat, g.lon);
+            DB.sb.from("addresses").update({ lat: g.lat, lon: g.lon }).eq("id", addr.id); // backfill
+          }
         }
+        if (km != null && km > GEO.MAX_KM) zoneOk = false;
+        else fee = km == null ? 30 : GEO.feeForKm(km, sub);
       }
-      if (km != null && km > GEO.MAX_KM) zoneOk = false;
-      else fee = km == null ? 30 : GEO.feeForKm(km, sub);
     }
     const tot = sub + fee;
 
@@ -116,7 +126,7 @@
     wrap.innerHTML =
       '<div class="card">' +
         (addr
-          ? '<div class="row" style="align-items:flex-start"><div class="circle-icon" style="background:transparent;color:var(--brand);margin-top:-4px">📍</div><div style="flex:1"><b>' + esc(addr.label) + '</b><div class="muted">' + esc(addr.address_text) + '</div></div><a href="account.html" class="btn secondary small" style="color:var(--brand);border:1px solid var(--brand);background:transparent;padding:6px 12px;height:auto">Change</a></div>'
+          ? '<div class="row" style="align-items:flex-start"><div class="circle-icon" style="background:transparent;color:var(--brand);margin-top:-4px">📍</div><div style="flex:1"><b>' + esc(addr.label) + '</b><div class="muted">' + esc(addr.address_text) + (area ? "<br>" + esc(area.name) + " — " + esc(area.pincode) : "") + '</div></div><a href="account.html" class="btn secondary small" style="color:var(--brand);border:1px solid var(--brand);background:transparent;padding:6px 12px;height:auto">Change</a></div>'
           : '<p class="muted">No saved address.</p><a href="account.html" class="btn secondary small" style="display:inline-block;margin-top:8px">Add Address</a>') +
       '</div>' +
       '<div class="card"><h2 style="font-size:16px;margin-bottom:12px">Delivery Slot</h2>' +
@@ -133,7 +143,7 @@
       rxSec +
       '<div class="card">' +
         '<div class="row" style="justify-content:space-between;margin-bottom:8px"><span>Subtotal</span><b>' + DB.money(sub) + '</b></div>' +
-        '<div class="row" style="justify-content:space-between;margin-bottom:8px"><span>Delivery Fee' + (km != null ? ' <span class="muted">(' + km.toFixed(1) + ' km)</span>' : '') + '</span><b' + (fee === 0 ? ' style="color:var(--brand)"' : '') + '>' + (fee === 0 ? 'FREE' : DB.money(fee)) + '</b></div>' +
+        '<div class="row" style="justify-content:space-between;margin-bottom:8px"><span>Delivery Fee' + (feeNote ? ' <span class="muted">(' + esc(feeNote) + ')</span>' : km != null ? ' <span class="muted">(' + km.toFixed(1) + ' km)</span>' : '') + '</span><b' + (fee === 0 ? ' style="color:var(--brand)"' : '') + '>' + (fee === 0 ? 'FREE' : DB.money(fee)) + '</b></div>' +
         '<hr style="border:0;border-top:1px dashed #d4dcd9;margin:12px 0">' +
         '<div class="row" style="justify-content:space-between;font-size:17px"><b>Total</b><b class="price">' + DB.money(tot) + '</b></div>' +
       '</div>' +

@@ -308,8 +308,12 @@
     try {
       var o = await DB.sb.from("orders").select("address_id").eq("id", orderId).single();
       if (o.error || !o.data || !o.data.address_id) return 30;
-      var a = await DB.sb.from("addresses").select("lat,lon,label,address_text").eq("id", o.data.address_id).single();
+      var a = await DB.sb.from("addresses").select("lat,lon,label,address_text,area_id").eq("id", o.data.address_id).single();
       if (a.error || !a.data) return 30;
+      if (a.data.area_id) {
+        var ar = await DB.sb.from("delivery_areas").select("fee").eq("id", a.data.area_id).single();
+        if (ar.data) return sub >= DB.geo.FREE_ABOVE ? 0 : Number(ar.data.fee);
+      }
       var km = null;
       if (a.data.lat != null && a.data.lon != null)
         km = DB.geo.haversineKm(DB.geo.SHOP.lat, DB.geo.SHOP.lon, a.data.lat, a.data.lon);
@@ -794,7 +798,32 @@
       "<tr><td><b>Address</b></td><td>Uttarpada, Jaleswar, Odisha</td></tr>" +
       "<tr><td><b>Payment</b></td><td>Cash on Delivery</td></tr>" +
       "<tr><td><b>Low-stock threshold</b></td><td>" + LOW_STOCK + " units</td></tr>" +
-      '</table><div style="margin-top:16px"><button class="btn ghost" data-act="signout">Sign out</button></div></div>';
+      '</table><div style="margin-top:16px"><button class="btn ghost" data-act="signout">Sign out</button></div></div>' +
+      '<div class="card" id="areaBox"><div class="empty">Loading…</div></div>';
+    loadAreas();
+  }
+
+  // Delivery villages & their fees — this table is the delivery zone now.
+  async function loadAreas() {
+    var box = document.getElementById("areaBox");
+    if (!box) return;
+    var r = await DB.sb.from("delivery_areas").select("id,name,pincode,distance_km,fee,is_active").order("name");
+    if (r.error) { box.innerHTML = '<div class="empty">Error: ' + esc(r.error.message) + "</div>"; return; }
+    box.innerHTML = "<b>Delivery areas &amp; fees</b>" +
+      '<p class="muted" style="margin:6px 0">Villages customers can pick at checkout — the fee here is exactly what they pay.</p>' +
+      '<div style="overflow-x:auto"><table class="grid" style="min-width:560px"><tr><th>Village</th><th>PIN</th><th>Km</th><th>Fee (₹)</th><th>Active</th><th></th></tr>' +
+      r.data.map(function (x) {
+        return "<tr><td><b>" + esc(x.name) + "</b></td><td>" + esc(x.pincode) + "</td><td>" + x.distance_km + "</td>" +
+          '<td><input class="mini-input" type="number" min="0" step="1" value="' + x.fee + '" data-fee="' + x.id + '" style="width:70px" aria-label="Fee"></td>' +
+          '<td><input type="checkbox" data-active="' + x.id + '"' + (x.is_active ? " checked" : "") + ' aria-label="Active"></td>' +
+          '<td><button class="btn sm" data-act="area-save" data-id="' + x.id + '">Save</button></td></tr>';
+      }).join("") + "</table></div>" +
+      '<div class="row" style="flex-wrap:wrap;gap:8px;margin-top:12px">' +
+      '<input class="input" id="naName" placeholder="Village name" style="max-width:170px" aria-label="Village name">' +
+      '<input class="input" id="naPin" placeholder="PIN" inputmode="numeric" style="max-width:110px" aria-label="PIN">' +
+      '<input class="input" id="naKm" type="number" min="0" step="0.1" placeholder="Km" style="max-width:90px" aria-label="Distance km">' +
+      '<input class="input" id="naFee" type="number" min="0" step="1" placeholder="Fee ₹" style="max-width:100px" aria-label="Fee">' +
+      '<button class="btn sm" data-act="area-add">Add village</button></div>';
   }
 
   var VIEWS = { dashboard: vDashboard, orders: vOrders, medicines: vMedicines, rx: vRx, staff: vStaff, reports: vReports, settings: vSettings };
@@ -828,6 +857,20 @@
       else if (act === "payout-settle") { await settleRider(id, b.dataset.name || "rider", b.dataset.amt); }
       else if (act === "payout-cancel") { await cancelPayout(id); }
       else if (act === "payout-detail") { payoutOpen[id] = !payoutOpen[id]; await loadPayouts(); }
+      else if (act === "area-save") {
+        var feeEl = view.querySelector('[data-fee="' + id + '"]'), actEl = view.querySelector('[data-active="' + id + '"]');
+        var au = await DB.sb.from("delivery_areas").update({ fee: Number(feeEl.value) || 0, is_active: actEl.checked }).eq("id", id);
+        DB.toast(au.error ? "Error: " + au.error.message : "Saved");
+        if (!au.error) loadAreas();
+      }
+      else if (act === "area-add") {
+        var gv = function (x) { return (document.getElementById(x).value || "").trim(); };
+        var nm = gv("naName"), pin = gv("naPin"), km = parseFloat(gv("naKm")), fee = parseFloat(gv("naFee"));
+        if (!nm || !pin || !(km >= 0) || !(fee >= 0)) { DB.toast("Fill village, PIN, km and fee"); return; }
+        var ai = await DB.sb.from("delivery_areas").insert({ name: nm, pincode: pin, distance_km: km, fee: fee });
+        DB.toast(ai.error ? "Error: " + ai.error.message : "Village added");
+        if (!ai.error) loadAreas();
+      }
       else if (act === "nr-create") { await provisionRider(); }
       else if (act === "gen-pass") { genPass(); }
       else if (act === "adv") {

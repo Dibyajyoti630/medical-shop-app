@@ -19,12 +19,17 @@
   const svgTrash = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>';
   const svgPin = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>';
 
-  function addrFormHTML(a) {
+  function addrFormHTML(a, areas) {
     a = a || {};
-    return '<div class="row" style="margin-top:8px">' +
+    const opts = (areas || []).map(x =>
+      '<option value="' + x.id + '"' + (a.area_id === x.id ? " selected" : "") + ">" +
+      esc(x.name) + " — " + esc(x.pincode) + " (delivery ₹" + Number(x.fee) + ")</option>").join("");
+    return '<label for="narea">Village</label>' +
+      '<select id="narea" aria-label="Village"><option value="">Select your village…</option>' + opts + "</select>" +
+      '<div class="row" style="margin-top:8px">' +
       '<input id="nlabel" placeholder="Label (Home)" style="flex:1" aria-label="Label" value="' + esc(a.label || "") + '">' +
       '<input id="nland" placeholder="Landmark" style="flex:2" aria-label="Landmark" value="' + esc(a.landmark || "") + '"></div>' +
-      '<textarea id="ntext" rows="2" placeholder="Full address" style="margin-top:8px" aria-label="Full address">' + esc(a.address_text || "") + "</textarea>" +
+      '<textarea id="ntext" rows="2" placeholder="House no, street…" style="margin-top:8px" aria-label="House details">' + esc(a.address_text || "") + "</textarea>" +
       '<div class="row" style="margin-top:8px"><button class="btn" id="asave" style="flex:1">Save address</button>' +
       '<button class="btn secondary" id="acancel" style="flex:1">Cancel</button></div>';
   }
@@ -34,16 +39,20 @@
     if (!chk.ok) return Auth.gate(wrap, render);
     const me = chk.profile;
 
-    let addrs = [], email = "";
+    let addrs = [], email = "", areas = [];
     try {
-      const [u, r] = await Promise.all([
+      const [u, r, ar] = await Promise.all([
         Auth.user().catch(() => null),
         DB.sb.from("addresses").select("*").eq("customer_id", me.id).order("created_at"),
+        (DB.areas ? DB.areas() : Promise.resolve([])).catch(() => []),
       ]);
       if (r.error) throw r.error;
       addrs = r.data;
       email = (u && u.email) || "";
+      areas = ar || [];
     } catch (e) { return DB.showErr(msg, e.message); }
+    const areaById = {};
+    areas.forEach(x => { areaById[x.id] = x; });
 
     // ── profile card: view or edit ──
     let prof;
@@ -69,18 +78,20 @@
     const editing = mode && mode.addrEdit;
     const rows = addrs.map(a => {
       if (editing && editing === a.id)
-        return '<div style="padding:8px 0">' + addrFormHTML(a) + "</div>";
+        return '<div style="padding:8px 0">' + addrFormHTML(a, areas) + "</div>";
+      const an = a.area_id && areaById[a.area_id];
       return '<div class="row" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid #edf1ef">' +
         '<div class="row" style="flex:1"><span style="color:var(--brand);line-height:0">' + svgPin + "</span><div><b>" +
         esc(a.label) + "</b><br><span class='muted'>" + esc(a.address_text) +
-        (a.landmark ? " (" + esc(a.landmark) + ")" : "") + "</span></div></div>" +
+        (a.landmark ? " (" + esc(a.landmark) + ")" : "") +
+        (an ? "<br>" + esc(an.name) + " — " + esc(an.pincode) : "") + "</span></div></div>" +
         '<button class="iconbtn" data-edit="' + a.id + '" aria-label="Edit address">' + svgEdit + "</button>" +
         '<button class="iconbtn" data-del="' + a.id + '" aria-label="Delete address">' + svgTrash + "</button></div>";
     }).join("");
 
     let addrCard = '<div class="card"><h2 style="margin-bottom:8px">My Addresses</h2><div id="alist">' +
       (rows || '<p class="muted">No addresses saved.</p>') + "</div>";
-    if (mode === "addrAdd") addrCard += addrFormHTML();
+    if (mode === "addrAdd") addrCard += addrFormHTML(null, areas);
     else if (!editing) addrCard += '<button class="btn" id="aaddshow" style="margin-top:8px">+ Add New Address</button>';
     addrCard += "</div>";
 
@@ -120,29 +131,24 @@
 
     const as = document.getElementById("asave");
     if (as) as.onclick = async () => {
+      const areaId = document.getElementById("narea").value;
+      if (!areaId) return DB.showErr(msg, "Select your village.");
       const text = document.getElementById("ntext").value.trim();
-      if (!text) return DB.showErr(msg, "Enter the full address.");
+      if (!text) return DB.showErr(msg, "Enter your house no / street.");
       const payload = {
         label: document.getElementById("nlabel").value.trim() || "Home",
         landmark: document.getElementById("nland").value.trim(),
         address_text: text,
+        area_id: areaId,
+        lat: null,
+        lon: null,
       };
-      // Locate the address once; refuse saves outside the delivery zone.
-      // (If the geocoder can't place it, save anyway — checkout retries.)
       as.disabled = true;
-      try {
-        const g = await DB.geo.geocode(text, payload.label).catch(() => null);
-        if (g) {
-          const km = DB.geo.haversineKm(DB.geo.SHOP.lat, DB.geo.SHOP.lon, g.lat, g.lon);
-          if (km > DB.geo.MAX_KM)
-            return DB.showErr(msg, "This address is about " + km.toFixed(0) + " km away — we deliver within " +
-              DB.geo.MAX_KM + " km of our store (Jaleswar–Baliapal area).");
-          payload.lat = g.lat; payload.lon = g.lon;
-        }
-      } finally { as.disabled = false; }
       let error;
-      if (editing) ({ error } = await DB.sb.from("addresses").update(payload).eq("id", editing));
-      else ({ error } = await DB.sb.from("addresses").insert(Object.assign({ customer_id: me.id }, payload)));
+      try {
+        if (editing) ({ error } = await DB.sb.from("addresses").update(payload).eq("id", editing));
+        else ({ error } = await DB.sb.from("addresses").insert(Object.assign({ customer_id: me.id }, payload)));
+      } finally { as.disabled = false; }
       if (error) return DB.showErr(msg, error.message);
       if (DB.toast) DB.toast(editing ? "Address updated" : "Address saved");
       mode = "profile";

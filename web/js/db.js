@@ -147,6 +147,19 @@
     return null;
   }
 
+  // Village-wise delivery areas (no geocoding). Small table, cached per page load.
+  let areasCache = null;
+  async function deliveryAreas() {
+    if (!areasCache) {
+      const r = await sb.from("delivery_areas").select("id,name,pincode,distance_km,fee")
+        .eq("is_active", true).order("name");
+      if (r.error) throw r.error;
+      areasCache = r.data || [];
+    }
+    return areasCache;
+  }
+
   window.DB = { sb, PAGE, medicines, categories, forms, medImage, money, esc, showErr, popup, toast, compressImage,
+    areas: deliveryAreas,
     geo: { SHOP: GEO.SHOP, MAX_KM: GEO.MAX_KM, FREE_ABOVE: GEO.FREE_ABOVE, haversineKm, feeForKm, geocode } };
 })();
