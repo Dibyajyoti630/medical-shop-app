@@ -305,13 +305,20 @@
 
   // ── Profile ────────────────────────────────────────────────────────────
   function vProfile() {
+    const S = DB.STORE || {};
     app.innerHTML = '<div class="r-body"><h2>Profile</h2><div class="r-earn r-prof">' +
       '<div class="r-ava">' + esc(initials(me.name)) + "</div>" +
       '<h3 style="font-size:20px;color:#1e2a3a;margin:6px 0 2px">' + esc(me.name || "Rider") + "</h3>" +
       '<div class="muted">' + esc(me.phone || "") + "</div>" +
       '<div style="margin-top:10px"><span class="pill st-picked_up">Rider</span></div>' +
       '<div class="muted" style="margin-top:10px">' + esc(SHOP) + "</div>" +
-      '<button class="btn r-signout" id="riderOut">Sign out</button></div></div>';
+      '<button class="btn r-signout" id="riderOut">Sign out</button></div>' +
+      '<div class="r-earn" style="margin-top:12px"><h3>Contact the shop</h3>' +
+      '<div class="row" style="gap:8px;flex-wrap:wrap">' +
+      '<a class="btn" style="flex:1;text-align:center;text-decoration:none" href="tel:' + esc(S.phone || "") + '">Call</a>' +
+      '<a class="btn secondary" style="flex:1;text-align:center;text-decoration:none" href="mailto:' + esc(S.email || "") + '">Email</a></div>' +
+      '<p class="muted" style="margin:10px 0 0">Drug Lic. Nos: ' + esc((S.licences || []).join(", ")) +
+      ' · <a href="drug-licence.pdf" target="_blank" rel="noopener">View licence (PDF)</a></p></div></div>';
     document.getElementById("riderOut").onclick = async () => { await Auth.signOut(); location.reload(); };
   }
 

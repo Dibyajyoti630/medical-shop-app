@@ -22,6 +22,17 @@
 
   const areaLabel = x => x.name + " — " + x.pincode + " (delivery ₹" + Number(x.fee) + ")";
 
+  // Shop contact card: call, email, view the drug licence.
+  function shopCard() {
+    const S = DB.STORE || {};
+    return '<div class="card"><h2 style="margin-bottom:8px">Contact the shop</h2>' +
+      '<div class="row" style="gap:8px;flex-wrap:wrap">' +
+      '<a class="btn" style="flex:1;text-align:center;text-decoration:none" href="tel:' + esc(S.phone || "") + '">Call ' + esc(S.phone || "") + "</a>" +
+      '<a class="btn secondary" style="flex:1;text-align:center;text-decoration:none" href="mailto:' + esc(S.email || "") + '">Email</a></div>' +
+      '<p class="muted" style="margin:10px 0 0">Drug Lic. Nos: ' + esc((S.licences || []).join(", ")) +
+      ' · <a href="drug-licence.pdf" target="_blank" rel="noopener" style="color:var(--brand);font-weight:600">View licence (PDF)</a></p></div>';
+  }
+
   // Live decision updates: approve/reject reflects without refresh.
   function watchAreaRequests(uid) {
     if (reqSub && reqUid === uid) return;
@@ -164,7 +175,7 @@
     else if (!editing) addrCard += '<button class="btn" id="aaddshow" style="margin-top:8px">+ Add New Address</button>';
     addrCard += "</div>";
 
-    wrap.innerHTML = prof + addrCard +
+    wrap.innerHTML = prof + addrCard + shopCard() +
       '<div class="card"><button class="btn secondary" id="so">Sign out</button></div>';
 
     document.getElementById("so").onclick = async () => { await Auth.signOut(); mode = "profile"; render(); };
