@@ -252,10 +252,11 @@
   // ── Earnings ───────────────────────────────────────────────────────────
   async function vEarnings() {
     const start = new Date(); start.setHours(0, 0, 0, 0);
-    const [t, all, fees] = await Promise.all([
+    const [t, all, fees, pp] = await Promise.all([
       DB.sb.from("orders").select("total,payment_method,delivery_fee").eq("rider_id", me.id).eq("status", "delivered").gte("updated_at", start.toISOString()),
       DB.sb.from("orders").select("id", { count: "exact", head: true }).eq("rider_id", me.id).eq("status", "delivered"),
       DB.sb.from("orders").select("id,delivery_fee,fee_paid_to_rider,updated_at").eq("rider_id", me.id).eq("status", "delivered").order("updated_at", { ascending: false }).limit(40),
+      DB.sb.rpc("my_pending_payout").maybeSingle(),
     ]);
     if (t.error) throw t.error;
     if (fees.error) throw fees.error;
@@ -266,7 +267,13 @@
     const feeAll = fr.reduce((a, o) => a + num(o), 0);
     const feePaid = fr.filter(o => o.fee_paid_to_rider).reduce((a, o) => a + num(o), 0);
     const dstr = ts => new Date(ts).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+    const pend = pp.data || null;
     app.innerHTML = '<div class="r-body"><h2>Earnings</h2>' +
+      (pend ? '<div class="r-earn" style="border:2px solid #f2731d"><h3>Payout waiting</h3>' +
+        '<div class="row"><span>Amount from the shop</span><b>' + DB.money(Number(pend.amount || 0)) + "</b></div>" +
+        '<p class="muted" style="margin:8px 0">Enter the one-time code the shop shared with you to confirm you received it.</p>' +
+        '<div class="row"><input class="input" id="payOtp" inputmode="numeric" maxlength="4" placeholder="4-digit code" style="max-width:150px">' +
+        '<button class="btn sm" id="payConfirm">Confirm receipt</button></div></div>' : "") +
       '<div class="r-earn"><h3>Today</h3>' +
       '<div class="row"><span>Deliveries completed</span><b>' + rows.length + "</b></div>" +
       '<div class="row"><span>Delivery fees earned</span><b>' + DB.money(feeToday) + "</b></div>" +
@@ -280,6 +287,19 @@
         '<div class="row"><span>' + dstr(o.updated_at) + " · " + DB.money(num(o)) + "</span>" +
         '<span class="pill ' + (o.fee_paid_to_rider ? 'st-paid">Paid' : 'st-pending">Pending') + "</span></div>").join("")
         : '<div class="muted">No deliveries yet.</div>') + "</div></div>";
+    const pc = document.getElementById("payConfirm");
+    if (pc && pend) pc.onclick = async () => {
+      const code = (document.getElementById("payOtp").value || "").trim();
+      if (!/^\d{4}$/.test(code)) { DB.toast("Enter the 4-digit code"); return; }
+      pc.disabled = true;
+      try {
+        const r = await DB.sb.rpc("confirm_payout", { p_id: pend.id, p_otp: code });
+        if (r.error) throw r.error;
+        if (r.data === true) { DB.popup("success", "Payout confirmed", "Thanks — your delivery fees are marked as paid."); await vEarnings(); }
+        else DB.toast("Wrong code — check with the shop and try again.");
+      } catch (e) { DB.toast("Error: " + e.message); }
+      pc.disabled = false;
+    };
   }
 
   // ── Profile ────────────────────────────────────────────────────────────

@@ -562,33 +562,70 @@
       : '<div class="empty">No riders yet.</div>';
   }
 
-  // Delivery-fee payouts: the fee on each delivered order belongs to its rider.
-  // Mark it paid once settled; the rider sees the status live on Earnings.
+  // Delivery-fee payouts, grouped by rider. "Settle" generates a 4-digit code the
+  // admin shares with the rider; the rider enters it in their app to confirm
+  // receipt, which flips their orders to paid. Pending payouts can be cancelled,
+  // and paid orders can be marked unpaid again — nothing is irreversible.
+  var payoutOpen = {};
   async function loadPayouts() {
     var box = document.getElementById("payoutBox");
     var r = await DB.sb.from("orders").select("id,delivery_fee,fee_paid_to_rider,updated_at,rider_id")
       .eq("status", "delivered").not("rider_id", "is", null)
-      .order("updated_at", { ascending: false }).limit(100);
+      .order("updated_at", { ascending: false }).limit(300);
     if (r.error) { box.innerHTML = '<div class="empty">Error: ' + esc(r.error.message) + "</div>"; return; }
-    var rows = r.data || [], names = {};
+    var rows = r.data || [], names = {}, groups = {}, pendPay = {};
     if (rows.length) {
       var p = await DB.sb.from("profiles").select("id,name")
         .in("id", rows.map(function (o) { return o.rider_id; }));
       (p.data || []).forEach(function (x) { names[x.id] = x.name; });
+      rows.forEach(function (o) {
+        var g = groups[o.rider_id] || (groups[o.rider_id] = { orders: [], earned: 0, paid: 0 });
+        g.orders.push(o);
+        var f = Number(o.delivery_fee || 0);
+        g.earned += f; if (o.fee_paid_to_rider) g.paid += f;
+      });
+      var py = await DB.sb.from("payouts").select("id,rider_id,amount,created_at").eq("status", "pending");
+      (py.data || []).forEach(function (x) { pendPay[x.rider_id] = x; });
     }
-    var pend = rows.filter(function (o) { return !o.fee_paid_to_rider; })
-      .reduce(function (a, o) { return a + Number(o.delivery_fee || 0); }, 0);
+    var ids = Object.keys(groups);
+    var totPend = ids.reduce(function (a, id) { return a + (groups[id].earned - groups[id].paid); }, 0);
     box.innerHTML = "<b>Delivery fee payouts</b>" +
-      '<p class="muted" style="margin:6px 0">Each order\u2019s delivery fee belongs to its rider. Mark it paid once you settle it — it reflects on the rider\u2019s Earnings page. Pending total: <b>' + DB.money(pend) + "</b></p>" +
-      (rows.length ? '<table class="grid"><tr><th>Date</th><th>Rider</th><th>Fee</th><th>Status</th><th></th></tr>' + rows.map(function (o) {
-        var paid = !!o.fee_paid_to_rider;
-        return "<tr><td>" + new Date(o.updated_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) + "</td>" +
-          "<td>" + esc(names[o.rider_id] || "—") + "</td>" +
-          "<td>" + DB.money(Number(o.delivery_fee || 0)) + "</td>" +
-          '<td><span class="pill ' + (paid ? 'delivered">Paid' : 'preparing">Unpaid') + "</span></td>" +
-          '<td><button class="btn sm' + (paid ? " secondary" : "") + '" data-act="fee-paid" data-id="' + o.id + '" data-v="' + (paid ? "0" : "1") + '">' +
-          (paid ? "Mark unpaid" : "Mark paid") + "</button></td></tr>";
+      '<p class="muted" style="margin:6px 0">Each order\u2019s delivery fee belongs to its rider. Settle a rider\u2019s pending total with a one-time code they confirm in their app — or mark individual orders paid/unpaid below. Pending total: <b>' + DB.money(totPend) + "</b></p>" +
+      (ids.length ? '<table class="grid"><tr><th>Rider</th><th>Deliveries</th><th>Earned</th><th>Paid</th><th>Pending</th><th></th></tr>' + ids.map(function (id) {
+        var g = groups[id], pending = g.earned - g.paid, pp = pendPay[id], open = !!payoutOpen[id];
+        var h = "<tr><td><b>" + esc(names[id] || "—") + "</b></td><td>" + g.orders.length + "</td><td>" + DB.money(g.earned) +
+          "</td><td>" + DB.money(g.paid) + "</td><td><b>" + DB.money(pending) + "</b></td>" +
+          '<td style="white-space:nowrap">' +
+          (pp
+            ? '<span class="muted">Code sent — waiting for rider</span> <button class="btn sm secondary" data-act="payout-cancel" data-id="' + pp.id + '">Cancel</button>'
+            : (pending > 0 ? '<button class="btn sm" data-act="payout-settle" data-id="' + id + '" data-name="' + esc(names[id] || "rider") + '" data-amt="' + pending.toFixed(2) + '">Settle ' + DB.money(pending) + "</button> " : "")) +
+          ' <button class="btn sm secondary" data-act="payout-detail" data-id="' + id + '">' + (open ? "Hide" : "Details") + "</button></td></tr>";
+        if (open) h += '<tr><td colspan="6">' + g.orders.map(function (o) {
+          var paid = !!o.fee_paid_to_rider;
+          return '<div class="row" style="padding:6px 0;border-top:1px solid #eee"><span>' +
+            new Date(o.updated_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) + " · " + DB.money(Number(o.delivery_fee || 0)) +
+            '</span><span style="display:flex;gap:8px;align-items:center"><span class="pill ' + (paid ? 'delivered">Paid' : 'preparing">Unpaid') + "</span>" +
+            '<button class="btn sm' + (paid ? " secondary" : "") + '" data-act="fee-paid" data-id="' + o.id + '" data-v="' + (paid ? "0" : "1") + '">' +
+            (paid ? "Mark unpaid" : "Mark paid") + "</button></span></div>";
+        }).join("") + "</td></tr>";
+        return h;
       }).join("") + "</table>" : '<div class="empty">No delivered orders yet.</div>');
+  }
+
+  async function settleRider(id, name, amt) {
+    var otp = String(Math.floor(1000 + Math.random() * 9000));
+    var ins = await DB.sb.from("payouts").insert({ rider_id: id, amount: amt, otp: otp }).select("id").single();
+    if (ins.error) { DB.toast("Error: " + ins.error.message); return; }
+    DB.popup("info", "Payout code for " + name,
+      "Share this one-time code with " + name + " — they enter it in the rider app to confirm receipt of " + DB.money(Number(amt)) + ". Code: " + otp);
+    await loadPayouts();
+  }
+
+  async function cancelPayout(id) {
+    if (!confirm("Cancel this payout? The rider's fees stay unpaid.")) return;
+    var u = await DB.sb.from("payouts").update({ status: "cancelled" }).eq("id", id);
+    DB.toast(u.error ? "Error: " + u.error.message : "Payout cancelled");
+    if (!u.error) loadPayouts();
   }
 
   function genPass() {
@@ -783,6 +820,9 @@
         } catch (err) { DB.toast("Error: " + err.message); }
         await loadPayouts();
       }
+      else if (act === "payout-settle") { await settleRider(id, b.dataset.name || "rider", b.dataset.amt); }
+      else if (act === "payout-cancel") { await cancelPayout(id); }
+      else if (act === "payout-detail") { payoutOpen[id] = !payoutOpen[id]; await loadPayouts(); }
       else if (act === "nr-create") { await provisionRider(); }
       else if (act === "gen-pass") { genPass(); }
       else if (act === "adv") {
