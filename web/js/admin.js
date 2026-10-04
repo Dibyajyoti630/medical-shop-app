@@ -591,14 +591,14 @@
     var totPend = ids.reduce(function (a, id) { return a + (groups[id].earned - groups[id].paid); }, 0);
     box.innerHTML = "<b>Delivery fee payouts</b>" +
       '<p class="muted" style="margin:6px 0">Each order\u2019s delivery fee belongs to its rider. Settle a rider\u2019s pending total with a one-time code they confirm in their app — or mark individual orders paid/unpaid below. Pending total: <b>' + DB.money(totPend) + "</b></p>" +
-      (ids.length ? '<table class="grid"><tr><th>Rider</th><th>Deliveries</th><th>Earned</th><th>Paid</th><th>Pending</th><th></th></tr>' + ids.map(function (id) {
+      (ids.length ? '<div style="overflow-x:auto"><table class="grid" style="min-width:620px"><tr><th>Rider</th><th>Deliveries</th><th>Earned</th><th>Paid</th><th>Pending</th><th></th></tr>' + ids.map(function (id) {
         var g = groups[id], pending = g.earned - g.paid, pp = pendPay[id], open = !!payoutOpen[id];
         var h = "<tr><td><b>" + esc(names[id] || "—") + "</b></td><td>" + g.orders.length + "</td><td>" + DB.money(g.earned) +
           "</td><td>" + DB.money(g.paid) + "</td><td><b>" + DB.money(pending) + "</b></td>" +
           '<td style="white-space:nowrap">' +
           (pp
             ? '<span class="muted">Code sent — waiting for rider</span> <button class="btn sm secondary" data-act="payout-cancel" data-id="' + pp.id + '">Cancel</button>'
-            : (pending > 0 ? '<button class="btn sm" data-act="payout-settle" data-id="' + id + '" data-name="' + esc(names[id] || "rider") + '" data-amt="' + pending.toFixed(2) + '">Settle ' + DB.money(pending) + "</button> " : "")) +
+            : (pending > 0 ? '<button class="btn sm" data-act="payout-settle" data-id="' + id + '" data-name="' + esc(names[id] || "rider") + '" data-amt="' + pending.toFixed(2) + '">Settle</button> ' : "")) +
           ' <button class="btn sm secondary" data-act="payout-detail" data-id="' + id + '">' + (open ? "Hide" : "Details") + "</button></td></tr>";
         if (open) h += '<tr><td colspan="6">' + g.orders.map(function (o) {
           var paid = !!o.fee_paid_to_rider;
@@ -609,7 +609,7 @@
             (paid ? "Mark unpaid" : "Mark paid") + "</button></span></div>";
         }).join("") + "</td></tr>";
         return h;
-      }).join("") + "</table>" : '<div class="empty">No delivered orders yet.</div>');
+      }).join("") + "</table></div>" : '<div class="empty">No delivered orders yet.</div>');
   }
 
   async function settleRider(id, name, amt) {
