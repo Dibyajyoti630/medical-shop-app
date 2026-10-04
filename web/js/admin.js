@@ -532,8 +532,7 @@
       '<div id="nrResult" style="margin-top:8px"></div></div>' +
       '<div class="card" id="staffTable"><div class="empty">Loading…</div></div>' +
       '<div class="card" id="payoutBox"><div class="empty">Loading…</div></div>';
-    await loadStaffTable();
-    await loadPayouts();
+    await Promise.all([loadStaffTable(), loadPayouts()]);
   }
 
   async function loadStaffTable() {
@@ -569,11 +568,15 @@
   var payoutOpen = {};
   async function loadPayouts() {
     var box = document.getElementById("payoutBox");
-    var r = await DB.sb.from("orders").select("id,delivery_fee,fee_paid_to_rider,updated_at,rider_id")
+    var rq = DB.sb.from("orders").select("id,delivery_fee,fee_paid_to_rider,updated_at,rider_id")
       .eq("status", "delivered").not("rider_id", "is", null)
       .order("updated_at", { ascending: false }).limit(300);
+    var pq = DB.sb.from("payouts").select("id,rider_id,amount,created_at").eq("status", "pending");
+    var rs = await Promise.all([rq, pq]);
+    var r = rs[0], py = rs[1];
     if (r.error) { box.innerHTML = '<div class="empty">Error: ' + esc(r.error.message) + "</div>"; return; }
     var rows = r.data || [], names = {}, groups = {}, pendPay = {};
+    (py.data || []).forEach(function (x) { pendPay[x.rider_id] = x; });
     if (rows.length) {
       var p = await DB.sb.from("profiles").select("id,name")
         .in("id", rows.map(function (o) { return o.rider_id; }));
@@ -586,8 +589,6 @@
         if (o.updated_at < g.from) g.from = o.updated_at;
         if (o.updated_at > g.to) g.to = o.updated_at;
       });
-      var py = await DB.sb.from("payouts").select("id,rider_id,amount,created_at").eq("status", "pending");
-      (py.data || []).forEach(function (x) { pendPay[x.rider_id] = x; });
     }
     var ids = Object.keys(groups);
     var totPend = ids.reduce(function (a, id) { return a + (groups[id].earned - groups[id].paid); }, 0);

@@ -50,6 +50,7 @@
       });
     }
     watchOrders();
+    watchPayouts();
     await refresh();
   }
 
@@ -252,11 +253,12 @@
   // ── Earnings ───────────────────────────────────────────────────────────
   async function vEarnings() {
     const start = new Date(); start.setHours(0, 0, 0, 0);
-    const [t, all, fees, pp] = await Promise.all([
+    const ppSafe = DB.sb.rpc("my_pending_payout").maybeSingle().then(r => r.data || null, () => null);
+    const [t, all, fees, pend] = await Promise.all([
       DB.sb.from("orders").select("total,payment_method,delivery_fee").eq("rider_id", me.id).eq("status", "delivered").gte("updated_at", start.toISOString()),
       DB.sb.from("orders").select("id", { count: "exact", head: true }).eq("rider_id", me.id).eq("status", "delivered"),
       DB.sb.from("orders").select("id,delivery_fee,fee_paid_to_rider,updated_at").eq("rider_id", me.id).eq("status", "delivered").order("updated_at", { ascending: false }).limit(40),
-      DB.sb.rpc("my_pending_payout").maybeSingle(),
+      ppSafe,
     ]);
     if (t.error) throw t.error;
     if (fees.error) throw fees.error;
@@ -267,7 +269,6 @@
     const feeAll = fr.reduce((a, o) => a + num(o), 0);
     const feePaid = fr.filter(o => o.fee_paid_to_rider).reduce((a, o) => a + num(o), 0);
     const dstr = ts => new Date(ts).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
-    const pend = pp.data || null;
     app.innerHTML = '<div class="r-body"><h2>Earnings</h2>' +
       (pend ? '<div class="r-earn" style="border:2px solid #f2731d"><h3>Payout waiting</h3>' +
         '<div class="row"><span>Amount from the shop</span><b>' + DB.money(Number(pend.amount || 0)) + "</b></div>" +
@@ -321,6 +322,17 @@
         function (p) {
           if (p.eventType === "INSERT") DB.toast("New delivery assigned");
           refresh().catch(function (e) { DB.showErr(msg, e.message); });
+        })
+      .subscribe();
+  }
+
+  // ── Realtime: payout codes arrive the instant the admin settles ─────────
+  function watchPayouts() {
+    DB.sb.channel("rider-payouts-" + me.id)
+      .on("postgres_changes", { event: "*", schema: "public", table: "payouts", filter: "rider_id=eq." + me.id },
+        function () {
+          if (tab === "earnings") refresh().catch(function (e) { DB.showErr(msg, e.message); });
+          else DB.toast("New payout from the shop — check Earnings");
         })
       .subscribe();
   }
